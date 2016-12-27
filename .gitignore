@@ -10,3 +10,9 @@
 *.js
 *.bc
 .npmignore
+*.db
+*.opendb
+projects/debug
+projects/release
+projects/debugout
+projects/releaseout

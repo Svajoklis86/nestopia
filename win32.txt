@@ -1,0 +1,15 @@
+Nestopia UE vx.xx win32
+=======================
+
+How to Build:
+Drop this overlay into the main Nestopia UE source.
+You should be able to compile using the VS solution.
+
+Notes:
+This is the legacy win32 port of Nestopia with a few enhancements
+designed to work with Nestopia UE. It is in maintenance mode and
+no new features are planned. However, it will be kept alive as long
+as it remains the most complete implementation of Nestopia.
+
+Pull requests for new features will still be accepted if anyone
+has interest in enhancing this port.
