@@ -56,7 +56,7 @@ char timebuf[6];
 
 int overscan_offset, overscan_height;
 
-static uint32_t videobuf[31457280]; // Maximum possible internal size
+static uint32_t videobuf[VIDBUF_MAXSIZE]; // Maximum possible internal size
 
 SDL_Window *sdlwindow;
 SDL_Window *embedwindow;
@@ -332,12 +332,12 @@ void video_create_embedded() {
 	}
 	#endif
 	
-	#ifdef GDK_WINDOWING_WAYLAND
+	/*#ifdef GDK_WINDOWING_WAYLAND
 	if (GDK_IS_WAYLAND_DISPLAY(display)) {
 		printf("Wayland will be supported in the future. For now use the X11 backend.\n");
 		exit(0);
 	}
-	#endif
+	#endif*/
 	
 	#ifdef _MINGW
 	#ifdef GDK_WINDOWING_WIN32
@@ -757,7 +757,7 @@ void video_screenshot(const char* filename) {
 	if (filename == NULL) {
 		// Set the filename
 		char sshotpath[512];
-		snprintf(sshotpath, sizeof(sshotpath), "%sscreenshots/%s-%d-%d.png", nstpaths.nstdir, nstpaths.gamename, time(NULL), rand() % 899 + 100);
+		snprintf(sshotpath, sizeof(sshotpath), "%sscreenshots/%s-%ld-%d.png", nstpaths.nstdir, nstpaths.gamename, time(NULL), rand() % 899 + 100);
 		
 		// Save the file
 		lodepng_encode32_file(sshotpath, (const unsigned char*)pixels, rendersize.w, rendersize.h);
@@ -772,9 +772,7 @@ void video_screenshot(const char* filename) {
 
 void video_clear_buffer() {
 	// Write black to the video buffer
-	for (int i = 0; i < 31457280; i++) {
-		videobuf[i] = 0x00000000;
-	}
+	memset(videobuf, 0x00000000, VIDBUF_MAXSIZE);
 }
 
 void video_disp_nsf() {
