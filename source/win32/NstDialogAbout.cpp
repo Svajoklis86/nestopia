@@ -58,7 +58,7 @@ namespace Nestopia
 		{
 			dialog.SetItemIcon( IDC_ABOUT_ICON, Application::Instance::GetIconStyle() == Application::Instance::ICONSTYLE_NES ? IDI_APP : IDI_APP_J );
 			//dialog.Control( IDC_ABOUT_NAMEVERSION ).Text() << (String::Heap<char>() << "Nestopia UE v" << Application::Instance::GetVersion()).Ptr();
-			dialog.Control( IDC_ABOUT_NAMEVERSION ).Text() << "Nestopia UE SVN 161227";
+			dialog.Control( IDC_ABOUT_NAMEVERSION ).Text() << "Nestopia UE SVN";
 			return true;
 		}
 
