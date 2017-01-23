@@ -317,7 +317,7 @@ IDR_MENU MENU
         MENUITEM "&Help...", IDM_HELP_HELP
         MENUITEM "&License...", IDM_HELP_LICENSE
         MENUITEM SEPARATOR
-        MENUITEM "&About svn170104...", IDM_HELP_ABOUT
+        MENUITEM "&About svn170123...", IDM_HELP_ABOUT
     }
 }
 

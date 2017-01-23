@@ -37,7 +37,7 @@
 
  #endif
 
- #include "zlib.h"
+ #include "../zlib/zlib.h"
 
 #endif
 
