@@ -32,9 +32,11 @@
 #include "gtkui.h"
 #include "gtkui_callbacks.h"
 #include "gtkui_config.h"
+#include "gtkui_input.h"
 
 extern settings_t conf;
 extern gamepad_t player[NUMGAMEPADS];
+extern gpad_t pad[NUMGAMEPADS];
 extern char padpath[512];
 extern bool playing;
 extern bool confrunning;
@@ -130,6 +132,10 @@ GtkWidget *gtkui_config() {
 	gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo_video_scale), "2x");
 	gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo_video_scale), "3x");
 	gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo_video_scale), "4x");
+	gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo_video_scale), "5x");
+	gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo_video_scale), "6x");
+	gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo_video_scale), "7x");
+	gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo_video_scale), "8x");
 		
 	gtk_combo_box_set_active(GTK_COMBO_BOX(combo_video_scale), conf.video_scale_factor - 1);
 	
@@ -837,10 +843,10 @@ GtkWidget *gtkui_config() {
 	
 	// Key Translation
 	g_signal_connect(G_OBJECT(configwindow), "key-press-event",
-		G_CALLBACK(gtkui_cb_convert_key), gpointer(1));
+		G_CALLBACK(gtkui_input_process_key), gpointer(1));
 	
 	g_signal_connect(G_OBJECT(configwindow), "key-release-event",
-		G_CALLBACK(gtkui_cb_convert_key), NULL);
+		G_CALLBACK(gtkui_input_process_key), NULL);
 	
 	// The Treeview
 	GtkWidget *treeview = gtk_widget_new(GTK_TYPE_TREE_VIEW,
@@ -869,34 +875,34 @@ GtkWidget *gtkui_config() {
 	gtk_tree_view_append_column(GTK_TREE_VIEW (treeview), columns[1]);
 	
 	gtk_tree_store_append(treestore_input, &iter, NULL);
-	gtk_tree_store_set(treestore_input, &iter, 0, "Up", 1, SDL_GetScancodeName(player[0].u), -1);
+	gtk_tree_store_set(treestore_input, &iter, 0, "Up", 1, gdk_keyval_name(pad[0].u), -1);
 	
 	gtk_tree_store_append(treestore_input, &iter, NULL);
-	gtk_tree_store_set(treestore_input, &iter, 0, "Down", 1, SDL_GetScancodeName(player[0].d), -1);
+	gtk_tree_store_set(treestore_input, &iter, 0, "Down", 1, gdk_keyval_name(pad[0].d), -1);
 	
 	gtk_tree_store_append(treestore_input, &iter, NULL);
-	gtk_tree_store_set(treestore_input, &iter, 0, "Left", 1, SDL_GetScancodeName(player[0].l), -1);
+	gtk_tree_store_set(treestore_input, &iter, 0, "Left", 1, gdk_keyval_name(pad[0].l), -1);
 	
 	gtk_tree_store_append(treestore_input, &iter, NULL);
-	gtk_tree_store_set(treestore_input, &iter, 0, "Right", 1, SDL_GetScancodeName(player[0].r), -1);
+	gtk_tree_store_set(treestore_input, &iter, 0, "Right", 1, gdk_keyval_name(pad[0].r), -1);
 	
 	gtk_tree_store_append(treestore_input, &iter, NULL);
-	gtk_tree_store_set(treestore_input, &iter, 0, "Select", 1, SDL_GetScancodeName(player[0].select), -1);
+	gtk_tree_store_set(treestore_input, &iter, 0, "Select", 1, gdk_keyval_name(pad[0].select), -1);
 	
 	gtk_tree_store_append(treestore_input, &iter, NULL);
-	gtk_tree_store_set(treestore_input, &iter, 0, "Start", 1, SDL_GetScancodeName(player[0].start), -1);
+	gtk_tree_store_set(treestore_input, &iter, 0, "Start", 1, gdk_keyval_name(pad[0].start), -1);
 	
 	gtk_tree_store_append(treestore_input, &iter, NULL);
-	gtk_tree_store_set(treestore_input, &iter, 0, "A", 1, SDL_GetScancodeName(player[0].a), -1);
+	gtk_tree_store_set(treestore_input, &iter, 0, "A", 1, gdk_keyval_name(pad[0].a), -1);
 	
 	gtk_tree_store_append(treestore_input, &iter, NULL);
-	gtk_tree_store_set(treestore_input, &iter, 0, "B", 1, SDL_GetScancodeName(player[0].b), -1);
+	gtk_tree_store_set(treestore_input, &iter, 0, "B", 1, gdk_keyval_name(pad[0].b), -1);
 	
 	gtk_tree_store_append(treestore_input, &iter, NULL);
-	gtk_tree_store_set(treestore_input, &iter, 0, "Turbo A", 1, SDL_GetScancodeName(player[0].ta), -1);
+	gtk_tree_store_set(treestore_input, &iter, 0, "Turbo A", 1, gdk_keyval_name(pad[0].ta), -1);
 	
 	gtk_tree_store_append(treestore_input, &iter, NULL);
-	gtk_tree_store_set(treestore_input, &iter, 0, "Turbo B", 1, SDL_GetScancodeName(player[0].tb), -1);
+	gtk_tree_store_set(treestore_input, &iter, 0, "Turbo B", 1, gdk_keyval_name(pad[0].tb), -1);
 	
 	gtk_box_pack_start(GTK_BOX(box_input_r), treeview, FALSE, FALSE, 0);
 	
@@ -984,33 +990,47 @@ GtkWidget *gtkui_config() {
 		G_CALLBACK(gtkui_cb_misc_power_state), NULL);
 	
 	// Alternate Speed
-	GtkAdjustment *adj_timing_altspeed = gtk_adjustment_new(conf.timing_altspeed, 1, 240, 1, 5, 0);
-	GtkWidget *box_timing_altspeed = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-	GtkWidget *label_timing_altspeed = gtk_widget_new(
+	GtkAdjustment *adj_timing_ffspeed = gtk_adjustment_new(conf.timing_ffspeed, 1, 8, 1, 5, 0);
+	GtkWidget *box_timing_ffspeed = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+	GtkWidget *label_timing_ffspeed = gtk_widget_new(
 				GTK_TYPE_LABEL,
-				"label", "Alternate Speed",
+				"label", "Fast-Forward Speed",
 				"halign", GTK_ALIGN_START,
 				"margin-top", MARGIN_TB,
 				"margin-bottom", MARGIN_TB,
 				"margin-left", MARGIN_LR,
 				"margin-right", MARGIN_LR,
 				NULL);
-	GtkWidget *scale_timing_altspeed = gtk_widget_new(
+	GtkWidget *scale_timing_ffspeed = gtk_widget_new(
 				GTK_TYPE_SCALE,
 				"halign", GTK_ALIGN_START,
 				"margin-left", MARGIN_LR,
 				"orientation", GTK_ORIENTATION_HORIZONTAL,
-				"adjustment", adj_timing_altspeed,
-				"width-request", 239,
+				"adjustment", adj_timing_ffspeed,
+				"width-request", 64,
 				"height-request", 32,
 				"digits", 0,
 				NULL);
-	gtk_box_pack_start(GTK_BOX(box_timing_altspeed), label_timing_altspeed, FALSE, FALSE, 0);
-	gtk_box_pack_start(GTK_BOX(box_timing_altspeed), scale_timing_altspeed, FALSE, FALSE, 0);
-	gtk_box_pack_start(GTK_BOX(box_misc), box_timing_altspeed, FALSE, FALSE, 0);
+	gtk_box_pack_start(GTK_BOX(box_timing_ffspeed), label_timing_ffspeed, FALSE, FALSE, 0);
+	gtk_box_pack_start(GTK_BOX(box_timing_ffspeed), scale_timing_ffspeed, FALSE, FALSE, 0);
+	gtk_box_pack_start(GTK_BOX(box_misc), box_timing_ffspeed, FALSE, FALSE, 0);
 	
-	g_signal_connect(G_OBJECT(scale_timing_altspeed), "value-changed",
-		G_CALLBACK(gtkui_cb_timing_altspeed), NULL);
+	g_signal_connect(G_OBJECT(scale_timing_ffspeed), "value-changed",
+		G_CALLBACK(gtkui_cb_timing_ffspeed), NULL);
+	
+	// Core Overclocking
+	GtkWidget *check_misc_overclock = gtk_widget_new(
+				GTK_TYPE_CHECK_BUTTON,
+				"label", "Core Overclocking (Requires Restart)",
+				"halign", GTK_ALIGN_START,
+				"margin-left", MARGIN_LR,
+				NULL);
+	gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(check_misc_overclock), conf.misc_overclock);
+	
+	gtk_box_pack_start(GTK_BOX(box_misc), check_misc_overclock, FALSE, FALSE, 0);
+	
+	g_signal_connect(G_OBJECT(check_misc_overclock), "toggled",
+		G_CALLBACK(gtkui_cb_misc_overclock), NULL);
 	
 	// Vsync
 	GtkWidget *check_timing_vsync = gtk_widget_new(
@@ -1097,7 +1117,6 @@ GtkWidget *gtkui_config() {
 		G_CALLBACK(gtkui_cb_misc_disable_cursor), NULL);
 	
 	// Pause While Configuration Open
-	#ifndef _APPLE
 	GtkWidget *check_misc_config_pause = gtk_widget_new(
 				GTK_TYPE_CHECK_BUTTON,
 				"label", "Pause While Configuration Open",
@@ -1110,7 +1129,6 @@ GtkWidget *gtkui_config() {
 	
 	g_signal_connect(G_OBJECT(check_misc_config_pause), "toggled",
 		G_CALLBACK(gtkui_cb_misc_config_pause), NULL);
-	#endif
 	
 	// Structuring the notebook
 	GtkWidget *label_video = gtk_label_new("Video");
@@ -1125,13 +1143,12 @@ GtkWidget *gtkui_config() {
 	// The OK button
 	GtkWidget *okbutton = gtk_widget_new(
 				GTK_TYPE_BUTTON,
-				"label", GTK_STOCK_OK,
+				"label", "OK",
 				"halign", GTK_ALIGN_END,
 				"margin-top", 8,
 				"margin-bottom", 8,
 				"margin-right", 8,
 				NULL);
-	gtk_button_set_use_stock(GTK_BUTTON(okbutton), TRUE);
 	
 	// Connect the OK button to a callback
 	g_signal_connect(G_OBJECT(okbutton), "clicked",
@@ -1207,41 +1224,46 @@ void gtkui_config_input_activate(GtkWidget *widget, GtkTreePath *path, gpointer 
 	gtk_tree_store_set(treestore_input, &iter, 1, "Set Key...", -1);
 	
 	// Set the key
-	input_configure_item(pnum, bnum, type);
+	if (type == 0) { // Keyboard
+		gtkui_input_config_item(pnum, bnum);
+	}
+	else { // Joystick
+		input_configure_item(pnum, bnum, type);
+	}
 	
 	// Replace the text with the new key
 	//gtkui_config_input_fields(type, pnum); // This can be used in place of the below if statement
 	if (type == 0) { // Keyboard
 		switch (bnum) {
 			case 0:
-				gtk_tree_store_set(treestore_input, &iter, 1, SDL_GetScancodeName(player[pnum].u), -1);
+				gtk_tree_store_set(treestore_input, &iter, 1, gdk_keyval_name(pad[pnum].u), -1);
 				break;
 			case 1:
-				gtk_tree_store_set(treestore_input, &iter, 1, SDL_GetScancodeName(player[pnum].d), -1);
+				gtk_tree_store_set(treestore_input, &iter, 1, gdk_keyval_name(pad[pnum].d), -1);
 				break;
 			case 2:
-				gtk_tree_store_set(treestore_input, &iter, 1, SDL_GetScancodeName(player[pnum].l), -1);
+				gtk_tree_store_set(treestore_input, &iter, 1, gdk_keyval_name(pad[pnum].l), -1);
 				break;
 			case 3:
-				gtk_tree_store_set(treestore_input, &iter, 1, SDL_GetScancodeName(player[pnum].r), -1);
+				gtk_tree_store_set(treestore_input, &iter, 1, gdk_keyval_name(pad[pnum].r), -1);
 				break;
 			case 4:
-				gtk_tree_store_set(treestore_input, &iter, 1, SDL_GetScancodeName(player[pnum].select), -1);
+				gtk_tree_store_set(treestore_input, &iter, 1, gdk_keyval_name(pad[pnum].select), -1);
 				break;
 			case 5:
-				gtk_tree_store_set(treestore_input, &iter, 1, SDL_GetScancodeName(player[pnum].start), -1);
+				gtk_tree_store_set(treestore_input, &iter, 1, gdk_keyval_name(pad[pnum].start), -1);
 				break;
 			case 6:
-				gtk_tree_store_set(treestore_input, &iter, 1, SDL_GetScancodeName(player[pnum].a), -1);
+				gtk_tree_store_set(treestore_input, &iter, 1, gdk_keyval_name(pad[pnum].a), -1);
 				break;
 			case 7:
-				gtk_tree_store_set(treestore_input, &iter, 1, SDL_GetScancodeName(player[pnum].b), -1);
+				gtk_tree_store_set(treestore_input, &iter, 1, gdk_keyval_name(pad[pnum].b), -1);
 				break;
 			case 8:
-				gtk_tree_store_set(treestore_input, &iter, 1, SDL_GetScancodeName(player[pnum].ta), -1);
+				gtk_tree_store_set(treestore_input, &iter, 1, gdk_keyval_name(pad[pnum].ta), -1);
 				break;
 			case 9:
-				gtk_tree_store_set(treestore_input, &iter, 1, SDL_GetScancodeName(player[pnum].tb), -1);
+				gtk_tree_store_set(treestore_input, &iter, 1, gdk_keyval_name(pad[pnum].tb), -1);
 				break;
 			default: break;
 		}
@@ -1298,25 +1320,25 @@ void gtkui_config_input_fields(int type, int pnum) {
 	
 	if (type == 0) {
 		gtk_tree_store_append(treestore_input, &iter, NULL);
-		gtk_tree_store_set(treestore_input, &iter, 0, "Up", 1, SDL_GetScancodeName(player[pnum].u), -1);
+		gtk_tree_store_set(treestore_input, &iter, 0, "Up", 1, gdk_keyval_name(pad[pnum].u), -1);
 		gtk_tree_store_append(treestore_input, &iter, NULL);
-		gtk_tree_store_set(treestore_input, &iter, 0, "Down", 1, SDL_GetScancodeName(player[pnum].d), -1);
+		gtk_tree_store_set(treestore_input, &iter, 0, "Down", 1, gdk_keyval_name(pad[pnum].d), -1);
 		gtk_tree_store_append(treestore_input, &iter, NULL);
-		gtk_tree_store_set(treestore_input, &iter, 0, "Left", 1, SDL_GetScancodeName(player[pnum].l), -1);
+		gtk_tree_store_set(treestore_input, &iter, 0, "Left", 1, gdk_keyval_name(pad[pnum].l), -1);
 		gtk_tree_store_append(treestore_input, &iter, NULL);
-		gtk_tree_store_set(treestore_input, &iter, 0, "Right", 1, SDL_GetScancodeName(player[pnum].r), -1);
+		gtk_tree_store_set(treestore_input, &iter, 0, "Right", 1, gdk_keyval_name(pad[pnum].r), -1);
 		gtk_tree_store_append(treestore_input, &iter, NULL);
-		gtk_tree_store_set(treestore_input, &iter, 0, "Select", 1, SDL_GetScancodeName(player[pnum].select), -1);
+		gtk_tree_store_set(treestore_input, &iter, 0, "Select", 1, gdk_keyval_name(pad[pnum].select), -1);
 		gtk_tree_store_append(treestore_input, &iter, NULL);
-		gtk_tree_store_set(treestore_input, &iter, 0, "Start", 1, SDL_GetScancodeName(player[pnum].start), -1);
+		gtk_tree_store_set(treestore_input, &iter, 0, "Start", 1, gdk_keyval_name(pad[pnum].start), -1);
 		gtk_tree_store_append(treestore_input, &iter, NULL);
-		gtk_tree_store_set(treestore_input, &iter, 0, "A", 1, SDL_GetScancodeName(player[pnum].a), -1);
+		gtk_tree_store_set(treestore_input, &iter, 0, "A", 1, gdk_keyval_name(pad[pnum].a), -1);
 		gtk_tree_store_append(treestore_input, &iter, NULL);
-		gtk_tree_store_set(treestore_input, &iter, 0, "B", 1, SDL_GetScancodeName(player[pnum].b), -1);
+		gtk_tree_store_set(treestore_input, &iter, 0, "B", 1, gdk_keyval_name(pad[pnum].b), -1);
 		gtk_tree_store_append(treestore_input, &iter, NULL);
-		gtk_tree_store_set(treestore_input, &iter, 0, "Turbo A", 1, SDL_GetScancodeName(player[pnum].ta), -1);
+		gtk_tree_store_set(treestore_input, &iter, 0, "Turbo A", 1, gdk_keyval_name(pad[pnum].ta), -1);
 		gtk_tree_store_append(treestore_input, &iter, NULL);
-		gtk_tree_store_set(treestore_input, &iter, 0, "Turbo B", 1, SDL_GetScancodeName(player[pnum].tb), -1);
+		gtk_tree_store_set(treestore_input, &iter, 0, "Turbo B", 1, gdk_keyval_name(pad[pnum].tb), -1);
 	}
 	if (type == 1) {
 		gtk_tree_store_append(treestore_input, &iter, NULL);

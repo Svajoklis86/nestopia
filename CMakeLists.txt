@@ -402,6 +402,7 @@ elseif( UNIX )
 			source/unix/gtkui/gtkui_cheats.cpp
 			source/unix/gtkui/gtkui_config.cpp
 			source/unix/gtkui/gtkui_dialogs.cpp
+			source/unix/gtkui/gtkui_input.cpp
 		)
 	endif()
 endif()
@@ -424,7 +425,7 @@ install( FILES source/unix/icons/svg/nestopia.svg  DESTINATION ${CMAKE_INSTALL_D
 install( FILES source/unix/icons/svg/nespad.svg    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/apps )
 
 # documentation
-install( FILES AUTHORS ChangeLog README.md README.unix DESTINATION ${CMAKE_INSTALL_DOCDIR} )
+install( FILES AUTHORS ChangeLog README.md DESTINATION ${CMAKE_INSTALL_DOCDIR} )
 install( FILES readme.html DESTINATION ${CMAKE_INSTALL_DOCDIR}/html )
 
 option( ENABLE_DOC "Install full documentation suite" )

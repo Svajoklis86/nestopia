@@ -1,7 +1,7 @@
 /*
  * Nestopia UE
  * 
- * Copyright (C) 2012-2016 R. Danbrook
+ * Copyright (C) 2012-2017 R. Danbrook
  * 
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,23 +33,57 @@
 #include "gtkui_config.h"
 #include "gtkui_cheats.h"
 #include "gtkui_dialogs.h"
+#include "gtkui_input.h"
 
 GtkWidget *gtkwindow;
-GtkWidget *statusbar;
-GtkWidget *drawingarea;
+static GtkWidget *menubar;
+static GtkWidget *drawingarea;
+
+static GThread *emuthread;
 
 char iconpath[512];
 char padpath[512];
 
 extern dimensions_t basesize, rendersize;
 extern settings_t conf;
+extern int nst_quit;
+
+gpointer gtkui_emuloop(gpointer data) {
+	while(!nst_quit) { nst_emuloop(); }
+	g_thread_exit(emuthread);
+	return NULL;
+}
+
+void gtkui_emuloop_start() {
+	emuthread = g_thread_new("emuloop", gtkui_emuloop, NULL);
+}
+
+void gtkui_emuloop_stop() {
+	nst_quit = true;
+}
+
+void gtkui_quit() {
+	gtkui_emuloop_stop();
+	gtk_main_quit();
+}
 
 void gtkui_init(int argc, char *argv[]) {
 	// Initialize the GTK+ GUI
 	gtk_init(&argc, &argv);
-	#ifndef _APPLE
 	gtkui_create();
-	#endif
+}
+
+static void gtkui_glarea_realize(GtkGLArea *glarea) {
+	gtk_gl_area_make_current(glarea);
+	gtk_gl_area_set_has_depth_buffer(glarea, FALSE);
+	ogl_init();
+}
+
+static void gtkui_swapbuffers() {
+	gtk_widget_queue_draw(drawingarea);
+	gtk_widget_queue_draw(menubar); // Needed on some builds of GTK+3
+	ogl_render();
+	nst_emuloop();
 }
 
 void gtkui_state_quickload(GtkWidget *widget, gpointer userdata) {
@@ -86,48 +120,41 @@ void gtkui_create() {
 	gtk_container_add(GTK_CONTAINER(gtkwindow), box);
 	
 	// Define the menubar and menus
-	GtkWidget *menubar = gtk_menu_bar_new();
+	menubar = gtk_menu_bar_new();
 	
 	// Define the File menu
 	GtkWidget *filemenu = gtk_menu_new();
-	GtkWidget *file = gtk_menu_item_new_with_mnemonic("_File");
-	GtkWidget *open = gtk_image_menu_item_new_from_stock(GTK_STOCK_OPEN, NULL);
-	GtkWidget *recent = gtk_image_menu_item_new_with_label("Open Recent");
-		gtk_image_menu_item_set_image(GTK_IMAGE_MENU_ITEM(recent), gtk_image_new_from_stock(GTK_STOCK_OPEN, GTK_ICON_SIZE_MENU));
+	GtkWidget *file = gtk_menu_item_new_with_label("File");
+	GtkWidget *open = gtk_menu_item_new_with_label("Open");
+	GtkWidget *recent = gtk_menu_item_new_with_label("Open Recent");
 	GtkWidget *sep_open = gtk_separator_menu_item_new();
-	GtkWidget *stateload = gtk_image_menu_item_new_with_mnemonic("_Load State...");
-		gtk_image_menu_item_set_image(GTK_IMAGE_MENU_ITEM(stateload), gtk_image_new_from_stock(GTK_STOCK_GO_BACK, GTK_ICON_SIZE_MENU));
-	GtkWidget *statesave = gtk_image_menu_item_new_with_mnemonic("_Save State...");
-		gtk_image_menu_item_set_image(GTK_IMAGE_MENU_ITEM(statesave), gtk_image_new_from_stock(GTK_STOCK_SAVE, GTK_ICON_SIZE_MENU));
+	GtkWidget *stateload = gtk_menu_item_new_with_label("Load State...");
+	GtkWidget *statesave = gtk_menu_item_new_with_label("Save State...");
 	
-	GtkWidget *quickload = gtk_image_menu_item_new_with_label("Quick Load");
+	GtkWidget *quickload = gtk_menu_item_new_with_label("Quick Load");
 	GtkWidget *qloadmenu = gtk_menu_new();
-		GtkWidget *qload0 = gtk_image_menu_item_new_with_label("0");
-		GtkWidget *qload1 = gtk_image_menu_item_new_with_label("1");
-		GtkWidget *qload2 = gtk_image_menu_item_new_with_label("2");
-		GtkWidget *qload3 = gtk_image_menu_item_new_with_label("3");
-		GtkWidget *qload4 = gtk_image_menu_item_new_with_label("4");
+		GtkWidget *qload0 = gtk_menu_item_new_with_label("0");
+		GtkWidget *qload1 = gtk_menu_item_new_with_label("1");
+		GtkWidget *qload2 = gtk_menu_item_new_with_label("2");
+		GtkWidget *qload3 = gtk_menu_item_new_with_label("3");
+		GtkWidget *qload4 = gtk_menu_item_new_with_label("4");
 	
-	GtkWidget *quicksave = gtk_image_menu_item_new_with_label("Quick Save");
+	GtkWidget *quicksave = gtk_menu_item_new_with_label("Quick Save");
 	GtkWidget *qsavemenu = gtk_menu_new();
-		GtkWidget *qsave0 = gtk_image_menu_item_new_with_label("0");
-		GtkWidget *qsave1 = gtk_image_menu_item_new_with_label("1");
-		GtkWidget *qsave2 = gtk_image_menu_item_new_with_label("2");
-		GtkWidget *qsave3 = gtk_image_menu_item_new_with_label("3");
-		GtkWidget *qsave4 = gtk_image_menu_item_new_with_label("4");
+		GtkWidget *qsave0 = gtk_menu_item_new_with_label("0");
+		GtkWidget *qsave1 = gtk_menu_item_new_with_label("1");
+		GtkWidget *qsave2 = gtk_menu_item_new_with_label("2");
+		GtkWidget *qsave3 = gtk_menu_item_new_with_label("3");
+		GtkWidget *qsave4 = gtk_menu_item_new_with_label("4");
 	
 	GtkWidget *sep_state = gtk_separator_menu_item_new();
-	GtkWidget *screenshot = gtk_image_menu_item_new_with_mnemonic("S_creenshot...");
-		gtk_image_menu_item_set_image(GTK_IMAGE_MENU_ITEM(screenshot), gtk_image_new_from_stock(GTK_STOCK_SELECT_COLOR, GTK_ICON_SIZE_MENU));
+	GtkWidget *screenshot = gtk_menu_item_new_with_label("Screenshot...");
 	GtkWidget *sep_screenshot = gtk_separator_menu_item_new();
-	GtkWidget *movieload = gtk_image_menu_item_new_with_label("Load Movie...");
-		gtk_image_menu_item_set_image(GTK_IMAGE_MENU_ITEM(movieload), gtk_image_new_from_stock(GTK_STOCK_OPEN, GTK_ICON_SIZE_MENU));
-	GtkWidget *moviesave = gtk_image_menu_item_new_with_label("Record Movie...");
-		gtk_image_menu_item_set_image(GTK_IMAGE_MENU_ITEM(moviesave), gtk_image_new_from_stock(GTK_STOCK_MEDIA_RECORD, GTK_ICON_SIZE_MENU));
-	GtkWidget *moviestop = gtk_image_menu_item_new_with_label("Stop Movie");
-		gtk_image_menu_item_set_image(GTK_IMAGE_MENU_ITEM(moviestop), gtk_image_new_from_stock(GTK_STOCK_MEDIA_STOP, GTK_ICON_SIZE_MENU));
+	GtkWidget *movieload = gtk_menu_item_new_with_label("Load Movie...");
+	GtkWidget *moviesave = gtk_menu_item_new_with_label("Record Movie...");
+	GtkWidget *moviestop = gtk_menu_item_new_with_label("Stop Movie");
 	GtkWidget *sep_movie = gtk_separator_menu_item_new();
-	GtkWidget *quit = gtk_image_menu_item_new_from_stock(GTK_STOCK_QUIT, NULL);
+	GtkWidget *quit = gtk_menu_item_new_with_label("Quit");
 	
 	// Set up the recently used items
 	GtkWidget *recent_items = gtk_recent_chooser_menu_new();
@@ -183,28 +210,21 @@ void gtkui_create() {
 	
 	// Define the Emulator menu
 	GtkWidget *emulatormenu = gtk_menu_new();
-	GtkWidget *emu = gtk_menu_item_new_with_mnemonic("_Emulator");
-	GtkWidget *cont = gtk_image_menu_item_new_with_mnemonic("C_ontinue");
-		gtk_image_menu_item_set_image(GTK_IMAGE_MENU_ITEM(cont), gtk_image_new_from_stock(GTK_STOCK_MEDIA_PLAY, GTK_ICON_SIZE_MENU));
-	GtkWidget *pause = gtk_image_menu_item_new_from_stock(GTK_STOCK_MEDIA_PAUSE, NULL);
+	GtkWidget *emu = gtk_menu_item_new_with_label("Emulator");
+	GtkWidget *cont = gtk_menu_item_new_with_label("Continue");
+	GtkWidget *pause = gtk_menu_item_new_with_label("Pause");
 	GtkWidget *sep_pause = gtk_separator_menu_item_new();
-	GtkWidget *resetsoft = gtk_image_menu_item_new_with_mnemonic("_Reset (Soft)");
-		gtk_image_menu_item_set_image(GTK_IMAGE_MENU_ITEM(resetsoft), gtk_image_new_from_stock(GTK_STOCK_REFRESH, GTK_ICON_SIZE_MENU));
-	GtkWidget *resethard = gtk_image_menu_item_new_with_mnemonic("Reset (_Hard)");
-		gtk_image_menu_item_set_image(GTK_IMAGE_MENU_ITEM(resethard), gtk_image_new_from_stock(GTK_STOCK_REFRESH, GTK_ICON_SIZE_MENU));
+	GtkWidget *resetsoft = gtk_menu_item_new_with_label("Reset (Soft)");
+	GtkWidget *resethard = gtk_menu_item_new_with_label("Reset (Hard)");
 	GtkWidget *sep_reset = gtk_separator_menu_item_new();
-	GtkWidget *fullscreen = gtk_image_menu_item_new_from_stock(GTK_STOCK_FULLSCREEN, NULL);
+	GtkWidget *fullscreen = gtk_menu_item_new_with_label("Fullscreen");
 	GtkWidget *sep_fullscreen = gtk_separator_menu_item_new();
-	GtkWidget *diskflip = gtk_image_menu_item_new_with_mnemonic("Flip FDS _Disk");
-		gtk_image_menu_item_set_image(GTK_IMAGE_MENU_ITEM(diskflip), gtk_image_new_from_stock(GTK_STOCK_FLOPPY, GTK_ICON_SIZE_MENU));
-	GtkWidget *diskswitch = gtk_image_menu_item_new_with_mnemonic("_Switch FDS Disk");
-		gtk_image_menu_item_set_image(GTK_IMAGE_MENU_ITEM(diskswitch), gtk_image_new_from_stock(GTK_STOCK_FLOPPY, GTK_ICON_SIZE_MENU));
+	GtkWidget *diskflip = gtk_menu_item_new_with_label("Flip FDS Disk");
+	GtkWidget *diskswitch = gtk_menu_item_new_with_label("Switch FDS Disk");
 	GtkWidget *sep_disk = gtk_separator_menu_item_new();
-	GtkWidget *cheats = gtk_image_menu_item_new_with_mnemonic("Ch_eats...");
-		gtk_image_menu_item_set_image(GTK_IMAGE_MENU_ITEM(cheats), gtk_image_new_from_stock(GTK_STOCK_DIALOG_WARNING, GTK_ICON_SIZE_MENU));
+	GtkWidget *cheats = gtk_menu_item_new_with_label("Cheats...");
 	GtkWidget *sep_cheats = gtk_separator_menu_item_new();
-	GtkWidget *configuration = gtk_image_menu_item_new_with_mnemonic("_Configuration...");
-		gtk_image_menu_item_set_image(GTK_IMAGE_MENU_ITEM(configuration), gtk_image_new_from_stock(GTK_STOCK_PREFERENCES, GTK_ICON_SIZE_MENU));
+	GtkWidget *configuration = gtk_menu_item_new_with_label("Configuration...");
 	
 	// Populate the Emulator menu
 	gtk_menu_item_set_submenu(GTK_MENU_ITEM(emu), emulatormenu);
@@ -225,8 +245,8 @@ void gtkui_create() {
 	
 	// Define the Help menu
 	GtkWidget *helpmenu = gtk_menu_new();
-	GtkWidget *help = gtk_menu_item_new_with_mnemonic("_Help");
-	GtkWidget *about = gtk_image_menu_item_new_from_stock(GTK_STOCK_ABOUT, NULL);
+	GtkWidget *help = gtk_menu_item_new_with_label("Help");
+	GtkWidget *about = gtk_menu_item_new_with_label("About");
 	
 	// Populate the Help menu
 	gtk_menu_item_set_submenu(GTK_MENU_ITEM(help), helpmenu);
@@ -238,21 +258,20 @@ void gtkui_create() {
 	gtk_menu_shell_append(GTK_MENU_SHELL(menubar), help);
 	
 	// Create the DrawingArea/OpenGL context
-	drawingarea = gtk_drawing_area_new();
-	//gtk_widget_set_double_buffered(drawingarea, FALSE);
+	///drawingarea = gtk_drawing_area_new();
+	drawingarea = gtk_gl_area_new();
+	g_signal_connect(G_OBJECT(drawingarea), "realize", G_CALLBACK(gtkui_glarea_realize), NULL);
+	g_signal_connect(G_OBJECT(drawingarea), "render", gtkui_swapbuffers, NULL);
+	//gtk_widget_add_tick_callback(drawingarea, gtkui_tick, drawingarea, NULL);
 	
 	g_object_set_data(G_OBJECT(gtkwindow), "area", drawingarea);
 	
 	// Set the Drawing Area to be the size of the game output
 	gtk_widget_set_size_request(drawingarea, rendersize.w, rendersize.h);
 	
-	// Create the statusbar
-	GtkWidget *statusbar = gtk_statusbar_new();
-	
 	// Pack the box with the menubar, drawingarea, and statusbar
 	gtk_box_pack_start(GTK_BOX(box), menubar, FALSE, FALSE, 0);
 	gtk_box_pack_start(GTK_BOX(box), drawingarea, TRUE, TRUE, 0);
-	//gtk_box_pack_start(GTK_BOX(box), statusbar, FALSE, FALSE, 0);
 	
 	// Make it dark if there's a dark theme
 	GtkSettings *gtksettings = gtk_settings_get_default();
@@ -269,12 +288,11 @@ void gtkui_create() {
 		target_entry, sizeof(target_entry) / sizeof(GtkTargetEntry), (GdkDragAction)(GDK_ACTION_MOVE | GDK_ACTION_COPY));
 	
 	// Connect the signals
-	
 	g_signal_connect(G_OBJECT(drawingarea), "drag-data-received",
 		G_CALLBACK(gtkui_drag_data), NULL);
 	
 	g_signal_connect(G_OBJECT(gtkwindow), "delete_event",
-		G_CALLBACK(nst_schedule_quit), NULL);
+		G_CALLBACK(gtkui_quit), NULL);
 	
 	// File menu
 	g_signal_connect(G_OBJECT(open), "activate",
@@ -332,7 +350,7 @@ void gtkui_create() {
 		G_CALLBACK(gtkui_movie_stop), NULL);
 	
 	g_signal_connect(G_OBJECT(quit), "activate",
-		G_CALLBACK(nst_schedule_quit), NULL);
+		G_CALLBACK(gtkui_quit), NULL);
 	
 	// Emulator menu
 	g_signal_connect(G_OBJECT(cont), "activate",
@@ -366,24 +384,45 @@ void gtkui_create() {
 	g_signal_connect(G_OBJECT(about), "activate",
 		G_CALLBACK(gtkui_about), NULL);
 	
-	// Key translation
-	g_signal_connect(G_OBJECT(gtkwindow), "key-press-event",
-		G_CALLBACK(gtkui_cb_convert_key), NULL);
-	
-	g_signal_connect(G_OBJECT(gtkwindow), "key-release-event",
-		G_CALLBACK(gtkui_cb_convert_key), NULL);
-	
-	// Mouse translation
+	// Mouse input events
 	gtk_widget_add_events(GTK_WIDGET(drawingarea), GDK_BUTTON_PRESS_MASK);
 	gtk_widget_add_events(GTK_WIDGET(drawingarea), GDK_BUTTON_RELEASE_MASK);
 	
+	gtk_widget_show_all(gtkwindow);
+	
+	//gtkui_emuloop_start();
+}
+
+void gtkui_signals_init() {
+	// Key translation
+	g_signal_connect(G_OBJECT(gtkwindow), "key-press-event",
+		G_CALLBACK(gtkui_input_process_key), NULL);
+	
+	g_signal_connect(G_OBJECT(gtkwindow), "key-release-event",
+		G_CALLBACK(gtkui_input_process_key), NULL);
+	
+	// Mouse translation
 	g_signal_connect(G_OBJECT(drawingarea), "button-press-event",
-		G_CALLBACK(gtkui_cb_convert_mouse), NULL);
+		G_CALLBACK(gtkui_input_process_mouse), NULL);
 	
 	g_signal_connect(G_OBJECT(drawingarea), "button-release-event",
-		G_CALLBACK(gtkui_cb_convert_mouse), NULL);
+		G_CALLBACK(gtkui_input_process_mouse), NULL);
+}
+
+void gtkui_signals_deinit() {
+	// Key translation
+	g_signal_connect(G_OBJECT(gtkwindow), "key-press-event",
+		gtkui_input_null, NULL);
 	
-	gtk_widget_show_all(gtkwindow);
+	g_signal_connect(G_OBJECT(gtkwindow), "key-release-event",
+		gtkui_input_null, NULL);
+	
+	// Mouse translation
+	g_signal_connect(G_OBJECT(drawingarea), "button-press-event",
+		gtkui_input_null, NULL);
+	
+	g_signal_connect(G_OBJECT(drawingarea), "button-release-event",
+		gtkui_input_null, NULL);
 }
 
 void gtkui_resize() {
@@ -394,9 +433,19 @@ void gtkui_resize() {
 }
 
 void gtkui_set_title(const char *title) {
-	#ifndef _APPLE
 	gtk_window_set_title(GTK_WINDOW(gtkwindow), title);
-	#endif
+}
+
+void gtkui_toggle_fullscreen() {
+	if (conf.video_fullscreen) {
+		gtk_widget_hide(menubar);
+		gtk_window_fullscreen(GTK_WINDOW(gtkwindow));
+	}
+	else {
+		gtk_window_unfullscreen(GTK_WINDOW(gtkwindow));
+		gtk_widget_show(menubar);
+	}
+	gtkui_resize();
 }
 
 GtkWidget *gtkui_about() {
@@ -410,7 +459,7 @@ GtkWidget *gtkui_about() {
 	gtk_about_dialog_set_version(GTK_ABOUT_DIALOG(aboutdialog), VERSION);
 	gtk_about_dialog_set_comments(GTK_ABOUT_DIALOG(aboutdialog), "Cycle-Accurate Nintendo Entertainment System Emulator");
 	gtk_about_dialog_set_website(GTK_ABOUT_DIALOG(aboutdialog), "http://0ldsk00l.ca/nestopia/");
-	gtk_about_dialog_set_copyright(GTK_ABOUT_DIALOG(aboutdialog), "(c) 2012-2016, R. Danbrook\n(c) 2007-2008, R. Belmont\n(c) 2003-2008, Martin Freij\n\nIcon based on art from Trollekop");
+	gtk_about_dialog_set_copyright(GTK_ABOUT_DIALOG(aboutdialog), "(c) 2012-2017, R. Danbrook\n(c) 2007-2008, R. Belmont\n(c) 2003-2008, Martin Freij\n\nIcon based on art from Trollekop");
 	gtk_dialog_run(GTK_DIALOG(aboutdialog));
 	gtk_widget_destroy(aboutdialog);
 	
@@ -446,23 +495,22 @@ void gtkui_message(const char* message) {
 void gtkui_cursor_set_crosshair() {
 	// Set the cursor to a crosshair
 	GdkCursor *cursor;
-	cursor = gdk_cursor_new(GDK_CROSSHAIR);
+	cursor = gdk_cursor_new_for_display(gdk_cursor_get_display(cursor), GDK_CROSSHAIR);
 	
 	GdkWindow *gdkwindow = gtk_widget_get_window(GTK_WIDGET(drawingarea));
 	
 	gdk_window_set_cursor(gdkwindow, cursor);
 	gdk_flush();
-	gdk_cursor_unref(cursor);
+	g_object_unref(cursor);
 }
 
 void gtkui_cursor_set_default() {
 	// Set the cursor to the default
 	GdkCursor *cursor;
-	cursor = gdk_cursor_new(GDK_LEFT_PTR);
-	
+	cursor = gdk_cursor_new_for_display(gdk_cursor_get_display(cursor), GDK_LEFT_PTR);
 	GdkWindow *gdkwindow = gtk_widget_get_window(GTK_WIDGET(drawingarea));
 	
 	gdk_window_set_cursor(gdkwindow, cursor);
 	gdk_flush();
-	gdk_cursor_unref(cursor);
+	g_object_unref(cursor);
 }

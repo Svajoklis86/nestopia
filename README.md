@@ -6,6 +6,28 @@ The following platforms are supported:
 * Linux, FreeBSD, OpenBSD, NetBSD, OS X, Windows
 * Anything supported by libretro
 
+This project depends on the following libraries:
+libsdl2, libepoxy, libao, libarchive, zlib
+
+Optionally, it depends on GTK+3 for the GUI, currently only available on Linux and BSD.
+
+## Building with Autotools
+In order to build with Autotools:
+```
+autoreconf -vif
+./configure --prefix=<INSTALLATION PREFIX>
+make -j<NUMBER OF CORES>
+```
+optionally:
+```
+make install
+```
+Differences on OS X:
+```
+export PKG_CONFIG_PATH=/usr/local/opt/libarchive/lib/pkgconfig/
+./configure --disable-gui
+```
+
 ## Building with CMake
 In order to build with CMake:
 ```
@@ -14,26 +36,13 @@ cd BUILD
 cmake -DCMAKE_INSTALL_PREFIX=<INSTALLATION PREFIX> ..
 make -j<NUMBER OF CORES>
 ```
-and optionally:
+optionally:
 ```
 make install
 ```
 The CMake build system can also be used with Ninja by adding `-GNinja` to the `cmake` line.
 
-## Building with Autotools
-In order to build with Autotools:
-```
-mkdir BUILD
-cd BUILD
-../configure --prefix=<INSTALLATION PREFIX>
-make -j<NUMBER OF CORES>
-```
-and optionally:
-```
-make install
-```
-
-in order to bootstrap the Autotools you will need
+In order to bootstrap the Autotools you will need:
 
 1.  **Autoconf**; latest 2.69 release (http://www.gnu.org/software/autoconf/)
 
@@ -46,7 +55,3 @@ in order to bootstrap the Autotools you will need
 3.  **Autoconf Archive**; latest 2016.09.16 release (http://www.gnu.org/software/autoconf-archive/)
 
     The configure.ac requires a number of m4 macros from the Autoconf archive.
-
-SVN build (2016-12-27): https://mega.nz/#!ZEVhXKqD!oJABOUUeoZR0gV42--Un8cmydrQgmyGorsERhueKc0E
-
-Latest SVN build (2017-01-04): https://mega.nz/#!FM9VyS4T!7QKo1ALSjjwB3AE_b7wXg4u4dnDc0JeSW29XWBgqEdk

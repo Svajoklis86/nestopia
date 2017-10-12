@@ -53,7 +53,7 @@ void config_file_write() {
 		fprintf(fp, "[video]\n");
 		fprintf(fp, "; 0=None, 1=NTSC, 2=xBR, 3=HqX, 4=2xSaI, 5=ScaleX\n");
 		fprintf(fp, "filter=%d\n\n", conf.video_filter);
-		fprintf(fp, "; Valid values are 1 to 4.\n");
+		fprintf(fp, "; Valid values are 1 to 8.\n");
 		fprintf(fp, "scale_factor=%d\n\n", conf.video_scale_factor);
 		fprintf(fp, "; 0=YUV, 1=RGB, 2=Custom\n");
 		fprintf(fp, "palette_mode=%d\n\n", conf.video_palette_mode);
@@ -112,8 +112,8 @@ void config_file_write() {
 		fprintf(fp, "[timing]\n");
 		fprintf(fp, "; Base speed for NTSC in Frames per Second.\n");
 		fprintf(fp, "speed=%d\n\n", conf.timing_speed);
-		fprintf(fp, "; Alternate speed (slow down or fast forward)\n");
-		fprintf(fp, "altspeed=%d\n\n", conf.timing_altspeed);
+		fprintf(fp, "; Fast-Forward Speed\n");
+		fprintf(fp, "ffspeed=%d\n\n", conf.timing_ffspeed);
 		fprintf(fp, "; Pulse turbo buttons every n frames. Minimum value is 2.\n");
 		fprintf(fp, "turbopulse=%d\n\n", conf.timing_turbopulse);
 		fprintf(fp, "; Valid values are 1 and 0.\n");
@@ -135,6 +135,7 @@ void config_file_write() {
 		fprintf(fp, "last_folder=%s\n", conf.misc_last_folder);
 		fprintf(fp, "; 0=0x00, 1=0xFF, 2=Random\n");
 		fprintf(fp, "power_state=%d\n", conf.misc_power_state);
+		fprintf(fp, "overclock=%d\n", conf.misc_overclock);
 		
 		fclose(fp);
 	}
@@ -188,7 +189,7 @@ void config_set_default() {
 	
 	// Timing
 	conf.timing_speed = 60;
-	conf.timing_altspeed = 180;
+	conf.timing_ffspeed = 3;
 	conf.timing_turbopulse = 3;
 	conf.timing_vsync = true;
 	conf.timing_limiter = true;
@@ -204,11 +205,9 @@ void config_set_default() {
 	#ifdef _MINGW
 	conf.misc_disable_gui = true; // Disable GUI for MinGW
 	#endif
-	#ifdef _APPLE
-	conf.misc_config_pause = true; // Always pause on OS X
-	#endif
 	conf.misc_last_folder = NULL;
 	conf.misc_power_state = 0;
+	conf.misc_overclock = false;
 }
 
 static int config_match(void* user, const char* section, const char* name, const char* value) {
@@ -258,7 +257,7 @@ static int config_match(void* user, const char* section, const char* name, const
 	
 	// Timing
 	else if (MATCH("timing", "speed")) { pconfig->timing_speed = atoi(value); }
-	else if (MATCH("timing", "altspeed")) { pconfig->timing_altspeed = atoi(value); }
+	else if (MATCH("timing", "ffspeed")) { pconfig->timing_ffspeed = atoi(value); }
 	else if (MATCH("timing", "turbopulse")) { pconfig->timing_turbopulse = atoi(value); }
 	else if (MATCH("timing", "vsync")) { pconfig->timing_vsync = atoi(value); }
 	else if (MATCH("timing", "limiter")) { pconfig->timing_limiter = atoi(value); }
@@ -273,6 +272,7 @@ static int config_match(void* user, const char* section, const char* name, const
 	else if (MATCH("misc", "disable_cursor")) { pconfig->misc_disable_cursor = atoi(value); }
 	else if (MATCH("misc", "last_folder")) { pconfig->misc_last_folder = strdup(value); }
 	else if (MATCH("misc", "power_state")) { pconfig->misc_power_state = atoi(value); }
+	else if (MATCH("misc", "overclock")) { pconfig->misc_overclock = atoi(value); }
     
 	else { return 0; }
 	return 1;

@@ -2,7 +2,7 @@
  * Nestopia UE
  * 
  * Copyright (C) 2007-2008 R. Belmont
- * Copyright (C) 2012-2016 R. Danbrook
+ * Copyright (C) 2012-2017 R. Danbrook
  * 
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -62,29 +62,16 @@
 #ifdef _GTK
 #include "gtkui/gtkui.h"
 #include "gtkui/gtkui_archive.h"
+#include "gtkui/gtkui_input.h"
 #endif
 
 using namespace Nes::Api;
 
-// base class, all interfaces derives from this
 Emulator emulator;
-
-bool loaded = false;
-bool playing = false;
-bool updateok = false;
-
-bool nst_pal = false;
-bool nst_nsf = false;
-
-static int nst_quit = 0;
-
-nstpaths_t nstpaths;
-
-void *custompalette = NULL;
 
 static Video::Output *cNstVideo;
 static Sound::Output *cNstSound;
-static Input::Controllers *cNstPads;
+Input::Controllers *cNstPads;
 static Cartridge::Database::Entry dbentry;
 
 static std::ifstream *nstdb;
@@ -93,8 +80,22 @@ static std::ifstream *fdsbios;
 static std::ifstream *moviefile;
 static std::fstream *movierecfile;
 
+static SDL_Event event;
+
+int nst_quit = 0;
+static bool ffspeed = false;
+bool loaded = false;
+bool playing = false;
+bool nst_pal = false;
+bool nst_nsf = false;
+
+nstpaths_t nstpaths;
+
+void *custompalette = NULL;
+
+extern void (*audio_deinit)();
+
 extern settings_t conf;
-extern bool altspeed;
 
 extern int drawtext;
 extern char textbuf[32];
@@ -259,6 +260,10 @@ void nst_pause() {
 		audio_deinit();
 	}
 	
+	#ifdef _GTK
+	if (!conf.misc_disable_gui) { gtkui_signals_deinit(); }
+	#endif
+	
 	playing = false;
 	video_set_cursor();
 }
@@ -302,21 +307,10 @@ void nst_switch_disk() {
 
 static Machine::FavoredSystem nst_default_system() {
 	switch (conf.misc_default_system) {
-		case 2:
-			return Machine::FAVORED_NES_PAL;
-			break;
-		
-		case 3:
-			return Machine::FAVORED_FAMICOM;
-			break;
-		
-		case 4:
-			return Machine::FAVORED_DENDY;
-			break;
-		
-		default:
-			return Machine::FAVORED_NES_NTSC;
-			break;
+		case 2: return Machine::FAVORED_NES_PAL; break;
+		case 3: return Machine::FAVORED_FAMICOM; break;
+		case 4: return Machine::FAVORED_DENDY; break;
+		default: return Machine::FAVORED_NES_NTSC; break;
 	}
 }
 
@@ -436,6 +430,10 @@ void nst_play() {
 	input_init();
 	cheats_init();
 	
+	#ifdef _GTK
+	if (!conf.misc_disable_gui) { gtkui_signals_init(); }
+	#endif
+	
 	cNstVideo = new Video::Output;
 	cNstSound = new Sound::Output;
 	cNstPads  = new Input::Controllers;
@@ -449,7 +447,6 @@ void nst_play() {
 		video_disp_nsf();
 	}
 	
-	updateok = false;
 	playing = true;
 }
 
@@ -558,14 +555,8 @@ void nst_set_region() {
 void nst_set_rewind(int direction) {
 	// Set the rewinder backward or forward
 	switch (direction) {
-		case 0:
-			Rewinder(emulator).SetDirection(Rewinder::BACKWARD);
-			break;
-			
-		case 1:
-			Rewinder(emulator).SetDirection(Rewinder::FORWARD);
-			break;
-			
+		case 0: Rewinder(emulator).SetDirection(Rewinder::BACKWARD); break;
+		case 1: Rewinder(emulator).SetDirection(Rewinder::FORWARD); break;
 		default: break;
 	}
 }
@@ -674,27 +665,28 @@ bool nst_archive_handle(const char *filename, char **rom, int *romsize, const ch
 	return false;
 }
 
-bool nst_find_patch(char *filename) {
+bool nst_find_patch(char *patchname, unsigned int patchname_length, const char *filename) {
 	// Check for a patch in the same directory as the game
 	FILE *file;
+	char filedir[512];
+
+	// Copy filename (will be used by dirname)
+	// dirname needs a copy because it can modify its argument
+	strncpy(filedir, filename, sizeof(filedir));
+	filedir[sizeof(filedir) - 1] = '\0';
+	// Use memmove because dirname can return the same pointer as its argument,
+	// since copying into same string as the argument we don't want any overlap
+	memmove(filedir, dirname(filedir), sizeof(filedir));
+	filedir[sizeof(filedir) - 1] = '\0';
 	
-	if (!conf.misc_soft_patching) {
-		return 0;
-	}
+	if (!conf.misc_soft_patching) { return 0; }
 	
-	snprintf(filename, sizeof(nstpaths.savename), "%s.ips", nstpaths.gamename);
+	snprintf(patchname, patchname_length, "%s/%s.ips", filedir, nstpaths.gamename);
 	
-	if ((file = fopen(filename, "rb")) != NULL) {
-		fclose(file);
-		return 1;
-	}
+	if ((file = fopen(patchname, "rb")) != NULL) { fclose(file); return 1; }
 	else {
-		snprintf(filename, sizeof(nstpaths.savename), "%s.ups", nstpaths.gamename);
-		
-		if ((file = fopen(filename, "rb")) != NULL) {
-			fclose(file);
-			return 1;
-		}
+		snprintf(patchname, patchname_length, "%s/%s.ups", filedir, nstpaths.gamename);
+		if ((file = fopen(patchname, "rb")) != NULL) { fclose(file); return 1; }
 	}
 	
 	return 0;
@@ -772,8 +764,14 @@ void nst_load_palette(const char *filename) {
 	long filesize; // File size in bytes
 	size_t result;
 	
-	file = fopen(filename, "rb");
+	char custgamepalpath[512];
+	snprintf(custgamepalpath, sizeof(custgamepalpath), "%s%s%s", nstpaths.nstdir, nstpaths.gamename, ".pal");
 	
+	// Try the game-specific palette first
+	file = fopen(custgamepalpath, "rb");
+	if (!file) { file = fopen(filename, "rb"); }
+	
+	// Then try the global custom palette
 	if (!file) {
 		if (conf.video_palette_mode == 2) {
 			fprintf(stderr, "Custom palette: not found: %s\n", filename);
@@ -832,7 +830,7 @@ void nst_load(const char *filename) {
 		// Set the file paths
 		nst_set_paths(filename);
 		
-		if (nst_find_patch(patchname)) { // Load with a patch if there is one
+		if (nst_find_patch(patchname, sizeof(patchname), filename)) { // Load with a patch if there is one
 			std::ifstream pfile(patchname, std::ios::in|std::ios::binary);
 			Machine::Patch patch(pfile, false);
 			result = machine.Load(file, nst_default_system(), patch);
@@ -911,10 +909,13 @@ void nst_load(const char *filename) {
 	loaded = 1;
 	
 	// Set the title
-	video_set_title(nstpaths.gamename);
+	if (conf.misc_disable_gui) { video_set_title(nstpaths.gamename); }
 	#ifdef _GTK
-	if (!conf.misc_disable_gui) { gtkui_set_title(nstpaths.gamename); }
+	else { gtkui_set_title(nstpaths.gamename); }
 	#endif
+	
+	// Load the custom palette
+	nst_load_palette(nstpaths.palettepath);
 	
 	// Set the RAM's power state
 	machine.SetRamPowerState(conf.misc_power_state);
@@ -925,10 +926,68 @@ void nst_load(const char *filename) {
 	nst_play();
 }
 
+int nst_timing_runframes() {
+	// Calculate how many emulation frames to run
+	if (ffspeed) { return conf.timing_ffspeed; }
+	return 1;
+}
+
+void nst_timing_set_ffspeed() {
+	// Set the framerate to the fast-forward speed
+	ffspeed = true;
+}
+
+void nst_timing_set_default() {
+	// Set the framerate to the default
+	ffspeed = false;
+}
+
+void nst_emuloop() {
+	///////////////////////////////////////////////////////
+	//// This is only here because I need SDL Joystick ////
+	//// Separate it into its own piece later on       ////
+	///////////////////////////////////////////////////////
+	
+	while (SDL_PollEvent(&event)) {
+		switch (event.type) {
+			case SDL_QUIT:
+				nst_quit = 1;
+				break;
+			
+			case SDL_KEYDOWN:
+			case SDL_KEYUP:
+			case SDL_JOYHATMOTION:
+			case SDL_JOYAXISMOTION:
+			case SDL_JOYBUTTONDOWN:
+			case SDL_JOYBUTTONUP:
+			case SDL_MOUSEBUTTONDOWN:
+			case SDL_MOUSEBUTTONUP:
+				input_process(cNstPads, event);
+				break;
+			default: break;
+		}	
+	}
+	///////////////////////////////////////////////////////
+	
+	if (NES_SUCCEEDED(Rewinder(emulator).Enable(true))) {
+		Rewinder(emulator).EnableSound(true);
+	}
+	
+	if (playing) {
+		audio_play();
+		
+		// Pulse the turbo buttons
+		input_pulse_turbo(cNstPads);
+		
+		// Execute frames
+		for (int i = 0; i < nst_timing_runframes(); i++) {
+			emulator.Execute(cNstVideo, cNstSound, cNstPads);
+		}
+	}
+}
+
 int main(int argc, char *argv[]) {
 	// This is the main function
-	
-	static SDL_Event event;
 	void *userData = (void*)0xDEADC0DE;
 
 	// Set up directories
@@ -964,21 +1023,26 @@ int main(int argc, char *argv[]) {
 	
 	// Set default input keys
 	input_set_default();
-	
+	#ifdef _GTK
+	if (!conf.misc_disable_gui) gtkui_input_set_default();
+	#endif
 	// Read the input config file and override defaults
 	input_config_read();
+	#ifdef _GTK
+	if (!conf.misc_disable_gui) gtkui_input_config_read();
+	#endif
 	
-	// Load the custom palette
-	nst_load_palette(nstpaths.palettepath);
+	// Set audio function pointers
+	audio_set_funcs();
 	
 	// Set the video dimensions
 	video_set_dimensions();
 	
 	// Create the window
+	if (conf.misc_disable_gui) { video_create(); }
 	#ifdef _GTK
-	if (!conf.misc_disable_gui) { gtkui_init(argc, argv); }
+	else { gtkui_init(argc, argv); }
 	#endif
-	video_create();
 	
 	// Set up the callbacks
 	Video::Output::lockCallback.Set(VideoLock, userData);
@@ -996,7 +1060,10 @@ int main(int argc, char *argv[]) {
 	fdsbios = NULL;
 	nst_load_db();
 	nst_load_fds_bios();
-
+	
+	Video video(emulator);
+	video.EnableOverclocking(conf.misc_overclock);
+	
 	// Load a rom from the command line
 	if (argc > 1) {
 		#ifdef _GTK // This is a dirty hack
@@ -1020,57 +1087,13 @@ int main(int argc, char *argv[]) {
 		#endif
 	}
 	
-	// Start the main loop
-	nst_quit = 0;
-	
-	while (!nst_quit) {
-		#if defined(_APPLE) && defined(_GTK)
-		if (!playing) { gtk_main_iteration_do(TRUE); }
-		#elif _GTK
-		while (gtk_events_pending()) {
-			gtk_main_iteration_do(TRUE);
-		}
-		if (!playing) { gtk_main_iteration_do(TRUE); }
-		#endif
-		if (playing) {
-			while (SDL_PollEvent(&event)) {
-				switch (event.type) {
-					case SDL_QUIT:
-						nst_quit = 1;
-						break;
-					
-					case SDL_KEYDOWN:
-					case SDL_KEYUP:
-					case SDL_JOYHATMOTION:
-					case SDL_JOYAXISMOTION:
-					case SDL_JOYBUTTONDOWN:
-					case SDL_JOYBUTTONUP:
-					case SDL_MOUSEBUTTONDOWN:
-					case SDL_MOUSEBUTTONUP:
-						input_process(cNstPads, event);
-						break;
-					default: break;
-				}	
-			}
-			
-			if (NES_SUCCEEDED(Rewinder(emulator).Enable(true))) {
-				Rewinder(emulator).EnableSound(true);
-			}
-			
-			audio_play();
-			
-			if (updateok) {
-				// Pulse the turbo buttons
-				input_pulse_turbo(cNstPads);
-				
-				// Execute a frame
-				if (timing_frameskip()) {
-					emulator.Execute(NULL, cNstSound, cNstPads);
-				}
-				else { emulator.Execute(cNstVideo, cNstSound, cNstPads); }
-			}
-		}
+	if (conf.misc_disable_gui) { // SDL Main loop
+		nst_quit = 0;
+		while (!nst_quit) { ogl_render(); nst_emuloop(); }
 	}
+	#ifdef _GTK
+	else { gtk_main(); } // GTK+ main loop
+	#endif
 	
 	// Remove the cartridge and shut down the NES
 	nst_unload();
@@ -1088,7 +1111,9 @@ int main(int argc, char *argv[]) {
 	
 	// Write the input config file
 	input_config_write();
-	
+	#ifdef _GTK
+	if (!conf.misc_disable_gui) { gtkui_input_config_write(); }
+	#endif
 	// Write the config file
 	config_file_write();
 

@@ -29,7 +29,7 @@ typedef struct {
 	
 	SDL_Scancode reset;
 	
-	SDL_Scancode altspeed;
+	SDL_Scancode ffspeed;
 	SDL_Scancode rwstart;
 	SDL_Scancode rwstop;
 	
@@ -60,6 +60,8 @@ typedef struct {
 	SDL_Event jb;
 	SDL_Event jta;
 	SDL_Event jtb;
+	SDL_Event rwstart;
+	SDL_Event rwstop;
 } gamepad_t;
 
 typedef struct {
@@ -79,7 +81,7 @@ typedef struct {
 	
 	char *reset;
 	
-	char *altspeed;
+	char *ffspeed;
 	char *rwstart;
 	char *rwstop;
 	
@@ -109,6 +111,9 @@ typedef struct {
 	char *js_p1b;
 	char *js_p1ta;
 	char *js_p1tb;
+	
+	char *js_rwstart;
+	char *js_rwstop;
 	
 	// Player 2
 	char *kb_p2u;
@@ -155,6 +160,7 @@ void input_joysticks_close();
 void input_process(Input::Controllers *controllers, SDL_Event event);
 void input_pulse_turbo(Input::Controllers *controllers);
 void input_inject(Input::Controllers *controllers, nesinput_t input);
+void input_inject_mouse(Input::Controllers *controllers, int b, int s, int x, int y);
 void input_match_joystick(Input::Controllers *controllers, SDL_Event event);
 void input_match_keyboard(Input::Controllers *controllers, SDL_Event event);
 void input_match_mouse(Input::Controllers *controllers, SDL_Event event);
@@ -165,7 +171,6 @@ void input_config_read_new();
 void input_config_read();
 void input_config_write();
 void input_set_default();
-static int input_config_match(void* user, const char* section, const char* name, const char* value);
 
 int input_configure_item(int pnum, int bnum, int type);
 void input_set_item(SDL_Event event, int type, int pnum, int counter);

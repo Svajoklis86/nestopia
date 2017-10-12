@@ -17,12 +17,14 @@
 #include "../source/core/api/NstApiUser.hpp"
 #include "../source/core/api/NstApiFds.hpp"
 
-#define NST_VERSION "1.48-WIP"
+#define NST_VERSION "1.49-WIP"
 
 #ifdef _WIN32
 #define snprintf _snprintf
 #endif
 
+#define MIN(a,b)      ((a)<(b)?(a):(b))
+#define MAX(a,b)      ((a)>(b)?(a):(b))
 #define NES_NTSC_PAR ((Api::Video::Output::WIDTH - (overscan_h ? 16 : 0)) * (8.0 / 7.0)) / (Api::Video::Output::HEIGHT - (overscan_v ? 16 : 0))
 #define NES_PAL_PAR ((Api::Video::Output::WIDTH - (overscan_h ? 16 : 0)) * (2950000.0 / 2128137.0)) / (Api::Video::Output::HEIGHT - (overscan_v ? 16 : 0))
 #define NES_4_3_DAR (4.0 / 3.0);
@@ -43,8 +45,8 @@ extern "C" void linearFree(void* mem);
 #endif
 static uint32_t* video_buffer = NULL;
 
-static int16_t audio_buffer[(44100 / 50)];
-static int16_t audio_stereo_buffer[2 * (44100 / 50)];
+static int16_t audio_buffer[(48000 / 50)];
+static int16_t audio_stereo_buffer[2 * (48000 / 50)];
 static Api::Emulator emulator;
 static Api::Machine *machine;
 static Api::Fds *fds;
@@ -112,14 +114,14 @@ static const byte pal_palette[64][3] =
   {0xB3,0xEE,0xFF}, {0xDD,0xDD,0xDD}, {0x11,0x11,0x11}, {0x11,0x11,0x11}
 };
 
-static const byte nostalgia_palette[64][3] =
+static const byte composite_direct_fbx_palette[64][3] =
 {
   {0x65,0x65,0x65}, {0x00,0x12,0x7D}, {0x18,0x00,0x8E}, {0x36,0x00,0x82},
   {0x56,0x00,0x5D}, {0x5A,0x00,0x18}, {0x4F,0x05,0x00}, {0x38,0x19,0x00},
   {0x1D,0x31,0x00}, {0x00,0x3D,0x00}, {0x00,0x41,0x00}, {0x00,0x3B,0x17},
   {0x00,0x2E,0x55}, {0x00,0x00,0x00}, {0x00,0x00,0x00}, {0x00,0x00,0x00},
   {0xAF,0xAF,0xAF}, {0x19,0x4E,0xC8}, {0x47,0x2F,0xE3}, {0x6B,0x1F,0xD7},
-  {0x93,0x1B,0xAE}, {0x9E,0x1A,0x5E}, {0x97,0x32,0x00}, {0x7B,0x4B,0x00},
+  {0x93,0x1B,0xAE}, {0x9E,0x1A,0x5E}, {0x99,0x32,0x00}, {0x7B,0x4B,0x00},
   {0x5B,0x67,0x00}, {0x26,0x7A,0x00}, {0x00,0x82,0x00}, {0x00,0x7A,0x3E},
   {0x00,0x6E,0x8A}, {0x00,0x00,0x00}, {0x00,0x00,0x00}, {0x00,0x00,0x00},
   {0xFF,0xFF,0xFF}, {0x64,0xA9,0xFF}, {0x8E,0x89,0xFF}, {0xB6,0x76,0xFF},
@@ -132,42 +134,88 @@ static const byte nostalgia_palette[64][3] =
   {0xBF,0xF1,0xF1}, {0xB9,0xB9,0xB9}, {0x00,0x00,0x00}, {0x00,0x00,0x00}
 };
 
-static const byte nes_classic_palette[64][3] =
+static const byte pvm_style_d93_fbx_palette[64][3] =
 {
-  {0x60,0x60,0x60}, {0x00,0x00,0x83}, {0x1F,0x06,0x9E}, {0x38,0x0F,0x7C},
-  {0x56,0x0C,0x62}, {0x5B,0x00,0x10}, {0x53,0x0C,0x00}, {0x3A,0x23,0x08},
-  {0x20,0x35,0x0B}, {0x0C,0x41,0x0B}, {0x19,0x45,0x16}, {0x02,0x3E,0x1E},
+  {0x69,0x6B,0x63}, {0x00,0x17,0x74}, {0x1E,0x00,0x87}, {0x34,0x00,0x73},
+  {0x56,0x00,0x57}, {0x5E,0x00,0x13}, {0x53,0x1A,0x00}, {0x3B,0x24,0x00},
+  {0x24,0x30,0x00}, {0x06,0x3A,0x00}, {0x00,0x3F,0x00}, {0x00,0x3B,0x1E},
+  {0x00,0x33,0x4E}, {0x00,0x00,0x00}, {0x00,0x00,0x00}, {0x00,0x00,0x00},
+  {0xB9,0xBB,0xB3}, {0x14,0x53,0xB9}, {0x4D,0x2C,0xDA}, {0x67,0x1E,0xDE},
+  {0x98,0x18,0x9C}, {0x9D,0x23,0x44}, {0xA0,0x3E,0x00}, {0x8D,0x55,0x00},
+  {0x65,0x6D,0x00}, {0x2C,0x79,0x00}, {0x00,0x81,0x00}, {0x00,0x7D,0x42},
+  {0x00,0x78,0x8A}, {0x00,0x00,0x00}, {0x00,0x00,0x00}, {0x00,0x00,0x00},
+  {0xFF,0xFF,0xFF}, {0x69,0xA8,0xFF}, {0x96,0x91,0xFF}, {0xB2,0x8A,0xFA},
+  {0xEA,0x7D,0xFA}, {0xF3,0x7B,0xC7}, {0xF2,0x8E,0x59}, {0xE6,0xAD,0x27},
+  {0xD7,0xC8,0x05}, {0x90,0xDF,0x07}, {0x64,0xE5,0x3C}, {0x45,0xE2,0x7D},
+  {0x48,0xD5,0xD9}, {0x4E,0x50,0x48}, {0x00,0x00,0x00}, {0x00,0x00,0x00},
+  {0xFF,0xFF,0xFF}, {0xD2,0xEA,0xFF}, {0xE2,0xE2,0xFF}, {0xE9,0xD8,0xFF},
+  {0xF5,0xD2,0xFF}, {0xF8,0xD9,0xEA}, {0xFA,0xDE,0xB9}, {0xF9,0xE8,0x9B},
+  {0xF3,0xF2,0x8C}, {0xD3,0xFA,0x91}, {0xB8,0xFC,0xA8}, {0xAE,0xFA,0xCA},
+  {0xCA,0xF3,0xF3}, {0xBE,0xC0,0xB8}, {0x00,0x00,0x00}, {0x00,0x00,0x00}
+};
+
+static const byte ntsc_hardware_fbx_palette[64][3] =
+{
+  {0x6A,0x6D,0x6A}, {0x00,0x13,0x80}, {0x1E,0x00,0x8A}, {0x39,0x00,0x7A},
+  {0x55,0x00,0x56}, {0x5A,0x00,0x18}, {0x4F,0x10,0x00}, {0x38,0x21,0x00},
+  {0x21,0x33,0x00}, {0x00,0x3D,0x00}, {0x00,0x40,0x00}, {0x00,0x39,0x24},
+  {0x00,0x2E,0x55}, {0x00,0x00,0x00}, {0x00,0x00,0x00}, {0x00,0x00,0x00},
+  {0xB9,0xBC,0xB9}, {0x18,0x50,0xC7}, {0x4B,0x30,0xE3}, {0x73,0x22,0xD6},
+  {0x95,0x1F,0xA9}, {0x9D,0x28,0x5C}, {0x96,0x3C,0x00}, {0x7A,0x51,0x00},
+  {0x5B,0x67,0x00}, {0x22,0x77,0x00}, {0x02,0x7E,0x02}, {0x00,0x76,0x45},
+  {0x00,0x6E,0x8A}, {0x00,0x00,0x00}, {0x00,0x00,0x00}, {0x00,0x00,0x00},
+  {0xFF,0xFF,0xFF}, {0x68,0xA6,0xFF}, {0x92,0x99,0xFF}, {0xB0,0x85,0xFF},
+  {0xD9,0x75,0xFD}, {0xE3,0x77,0xB9}, {0xE5,0x8D,0x68}, {0xCF,0xA2,0x2C},
+  {0xB3,0xAF,0x0C}, {0x7B,0xC2,0x11}, {0x55,0xCA,0x47}, {0x46,0xCB,0x81},
+  {0x47,0xC1,0xC5}, {0x4A,0x4D,0x4A}, {0x00,0x00,0x00}, {0x00,0x00,0x00},
+  {0xFF,0xFF,0xFF}, {0xCC,0xEA,0xFF}, {0xDD,0xDE,0xFF}, {0xEC,0xDA,0xFF},
+  {0xF8,0xD7,0xFE}, {0xFC,0xD6,0xF5}, {0xFD,0xDB,0xCF}, {0xF9,0xE7,0xB5},
+  {0xF1,0xF0,0xAA}, {0xDA,0xFA,0xA9}, {0xC9,0xFF,0xBC}, {0xC3,0xFB,0xD7},
+  {0xC4,0xF6,0xF6}, {0xBE,0xC1,0xBE}, {0x00,0x00,0x00}, {0x00,0x00,0x00}
+};
+
+static const byte nes_classic_fbx_fs_palette[64][3] =
+{
+  {0x60,0x61,0x5F}, {0x00,0x00,0x83}, {0x1D,0x01,0x95}, {0x34,0x08,0x75},
+  {0x51,0x05,0x5E}, {0x56,0x00,0x0F}, {0x4C,0x07,0x00}, {0x37,0x23,0x08},
+  {0x20,0x3A,0x0B}, {0x0F,0x4B,0x0E}, {0x19,0x4C,0x16}, {0x02,0x42,0x1E},
   {0x02,0x31,0x54}, {0x00,0x00,0x00}, {0x00,0x00,0x00}, {0x00,0x00,0x00},
-  {0xA9,0xA9,0xA9}, {0x10,0x4B,0xBF}, {0x4A,0x1E,0xE4}, {0x69,0x0A,0xD2},
-  {0x8E,0x12,0xB2}, {0x9E,0x0F,0x4C}, {0x8F,0x32,0x04}, {0x73,0x51,0x06},
-  {0x5C,0x6A,0x12}, {0x18,0x7D,0x10}, {0x14,0x81,0x09}, {0x11,0x75,0x47},
-  {0x1D,0x66,0x8F}, {0x00,0x00,0x00}, {0x00,0x00,0x00}, {0x00,0x00,0x00},
-  {0xFB,0xFB,0xFB}, {0x66,0x99,0xF8}, {0x89,0x78,0xFE}, {0xB2,0x62,0xFF},
-  {0xDE,0x63,0xFF}, {0xEB,0x69,0xB3}, {0xE3,0x87,0x58}, {0xC8,0x9F,0x22},
-  {0xA7,0xB1,0x03}, {0x73,0xC2,0x03}, {0x5D,0xD0,0x4F}, {0x36,0xC5,0x8D},
-  {0x50,0xC5,0xCC}, {0x40,0x40,0x40}, {0x00,0x00,0x00}, {0x00,0x00,0x00},
-  {0xFB,0xFB,0xFB}, {0xBF,0xD4,0xFA}, {0xCD,0xCB,0xFE}, {0xD9,0xC2,0xFF},
-  {0xEC,0xBE,0xFF}, {0xFA,0xC2,0xEB}, {0xF7,0xCA,0xC3}, {0xE3,0xCD,0xA7},
-  {0xD9,0xDE,0x9C}, {0xC8,0xE6,0x9E}, {0xC0,0xE6,0xB8}, {0xB5,0xED,0xC7},
-  {0xB9,0xE6,0xEA}, {0xB8,0xB8,0xB8}, {0x00,0x00,0x00}, {0x00,0x00,0x00}
+  {0xA9,0xAA,0xA8}, {0x10,0x4B,0xBF}, {0x47,0x12,0xD8}, {0x63,0x00,0xCA},
+  {0x88,0x00,0xA9}, {0x93,0x0B,0x46}, {0x8A,0x2D,0x04}, {0x6F,0x52,0x06},
+  {0x5C,0x71,0x14}, {0x1B,0x8D,0x12}, {0x19,0x95,0x09}, {0x17,0x84,0x48},
+  {0x20,0x6B,0x8E}, {0x00,0x00,0x00}, {0x00,0x00,0x00}, {0x00,0x00,0x00},
+  {0xFB,0xFB,0xFB}, {0x66,0x99,0xF8}, {0x89,0x74,0xF9}, {0xAB,0x58,0xF8},
+  {0xD5,0x57,0xEF}, {0xDE,0x5F,0xA9}, {0xDC,0x7F,0x59}, {0xC7,0xA2,0x24},
+  {0xA7,0xBE,0x03}, {0x75,0xD7,0x03}, {0x60,0xE3,0x4F}, {0x3C,0xD6,0x8D},
+  {0x56,0xC9,0xCC}, {0x41,0x42,0x40}, {0x00,0x00,0x00}, {0x00,0x00,0x00},
+  {0xFB,0xFB,0xFB}, {0xBE,0xD4,0xFA}, {0xC9,0xC7,0xF9}, {0xD7,0xBE,0xFA},
+  {0xE8,0xB8,0xF9}, {0xF5,0xBA,0xE5}, {0xF3,0xCA,0xC2}, {0xDF,0xCD,0xA7},
+  {0xD9,0xE0,0x9C}, {0xC9,0xEB,0x9E}, {0xC0,0xED,0xB8}, {0xB5,0xF4,0xC7},
+  {0xB9,0xEA,0xE9}, {0xAB,0xAB,0xAB}, {0x00,0x00,0x00}, {0x00,0x00,0x00}
 };
 
 int crossx = 0;
 int crossy = 0;
 
+#define CROSSHAIR_SIZE 3
+
 void draw_crosshair(int x, int y)
 {
    uint32_t w = 0xFFFFFFFF;
    uint32_t b = 0x00000000;
+   int current_width = 256;
    
-   for(int i = -3; i < 4; i++) {
-      video_buffer[256 * y + x + i] = b;
-      video_buffer[256 * (y + i) + x] = b;
+   if (blargg_ntsc){
+      x *= 2.36;
+      current_width = 602;
    }
-   
-   for(int i = -2; i < 3; i += 2) {
-      video_buffer[256 * y + x + i] = w;
-      video_buffer[256 * (y + i) + x] = w;
+
+   for (int i = MAX(-CROSSHAIR_SIZE, -x); i <= MIN(CROSSHAIR_SIZE, current_width - x); i++) {
+     video_buffer[current_width * y + x + i] = i % 2 == 0 ? w : b;
+   }
+
+   for (int i = MAX(-CROSSHAIR_SIZE, -y); i <= MIN(CROSSHAIR_SIZE, 239 - y); i++) {
+     video_buffer[current_width * (y + i) + x] = i % 2 == 0 ? w : b;
    }
 }
 
@@ -241,49 +289,18 @@ static void check_system_specs(void)
 void retro_init(void)
 {
    struct retro_log_callback log;
-#ifdef _3DS
-   video_buffer = (uint32_t*)linearMemAlign(Api::Video::Output::NTSC_WIDTH * Api::Video::Output::HEIGHT * sizeof(uint32_t), 0x80);
-#else
-   video_buffer = (uint32_t*)malloc(Api::Video::Output::NTSC_WIDTH * Api::Video::Output::HEIGHT * sizeof(uint32_t));
-#endif
-
-   machine = new Api::Machine(emulator);
-   input = new Api::Input::Controllers;
-   Api::User::fileIoCallback.Set(file_io_callback, 0);
 
    if (environ_cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &log))
       log_cb = log.log;
    else
       log_cb = NULL;
 
+
    check_system_specs();
 }
 
 void retro_deinit(void)
 {
-   if (machine->Is(Nes::Api::Machine::DISK))
-   {
-      if (fds)
-         delete fds;
-      fds = 0;
-   }
-   
-   delete machine;
-   delete video;
-   delete audio;
-   delete input;
-
-   machine = 0;
-   video   = 0;
-   audio   = 0;
-   input   = 0;
-
-#ifdef _3DS
-   linearFree(video_buffer);
-#else
-   free(video_buffer);
-#endif
-   video_buffer = NULL;
 }
 
 unsigned retro_api_version(void)
@@ -324,7 +341,7 @@ double get_aspect_ratio(void)
 
 void retro_get_system_av_info(struct retro_system_av_info *info)
 {
-   const retro_system_timing timing = { is_pal ? 50.0 : 60.0, 44100.0 };
+   const retro_system_timing timing = { is_pal ? 50.0 : 60.0, 48000.0 };
    info->timing = timing;
 
    // It's better if the size is based on NTSC_WIDTH if the filter is on
@@ -345,8 +362,9 @@ void retro_set_environment(retro_environment_t cb)
 
    static const struct retro_variable vars[] = {
       { "nestopia_blargg_ntsc_filter", "Blargg NTSC filter; disabled|composite|svideo|rgb|monochrome" },
-      { "nestopia_palette", "Palette; consumer|canonical|alternative|rgb|cxa2025as|pal|nostalgia|nes-classic|raw|custom" },
+      { "nestopia_palette", "Palette; cxa2025as|consumer|canonical|alternative|rgb|pal|composite-direct-fbx|pvm-style-d93-fbx|ntsc-hardware-fbx|nes-classic-fbx-fs|raw|custom" },
       { "nestopia_nospritelimit", "Remove 8-sprites-per-scanline hardware limit; disabled|enabled" },
+      { "nestopia_overclock", "CPU Speed (Overclock); 1x|2x" },
       { "nestopia_fds_auto_insert", "Automatically insert first FDS disk on reset; enabled|disabled" },
       { "nestopia_overscan_v", "Mask Overscan (Vertical); enabled|disabled" },
       { "nestopia_overscan_h", "Mask Overscan (Horizontal); disabled|enabled" },
@@ -422,23 +440,40 @@ static void update_input()
    input->pad[1].buttons = 0;
    input->pad[2].buttons = 0;
    input->pad[3].buttons = 0;
+   input->pad[1].mic = 0;
    input->zapper.fire = 0;
    input->vsSystem.insertCoin = 0;
    
    if (Api::Input(emulator).GetConnectedController(1) == 5) {
       static int zapx = overscan_h ? 8 : 0; 
       static int zapy = overscan_v ? 8 : 0;
-      zapx += input_state_cb(1, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_X);
-      zapy += input_state_cb(1, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_Y);
-   
-      if (zapx >= 256) { crossx = 255; }
-      else if (zapx <= 0) { crossx = 0; }
+      int min_x = overscan_h ? 8 : 0;
+      int max_x = overscan_h ? 247 : 255; 
+      int min_y = overscan_v ? 8 : 0;
+      int max_y = overscan_v ? 231 : 239;
+
+      if (zapx > max_x)
+         zapx = max_x;
+      else if (zapx < min_x)
+         zapx = min_x;
+      else
+         zapx += input_state_cb(1, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_X);
+
+      if (zapy > max_y)
+         zapy = max_y;
+      else if (zapy < min_y)
+         zapy = min_y;
+      else
+         zapy += input_state_cb(1, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_Y);
+
+      if (zapx > max_x) { crossx = max_x; }
+      else if (zapx < min_x) { crossx = min_x; }
       else {crossx = zapx; }
-      
-      if (zapy >= 240) { crossy = 239; }
-      else if (zapy <= 0) { crossy = 0; }
+
+      if (zapy > max_y) { crossy = max_y; }
+      else if (zapy < min_y) { crossy = min_y; }
       else {crossy = zapy; }
-      
+
       if (input_state_cb(1, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_TRIGGER)) {
          input->zapper.x = zapx;
          input->zapper.y = zapy;
@@ -464,6 +499,9 @@ static void update_input()
       }
       
    if (tstate) tstate--; else tstate = tpulse;
+   
+   if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3))
+      input->pad[1].mic |= 0x04;
    
    if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2))
       input->vsSystem.insertCoin |= Core::Input::Controllers::VsSystem::COIN_1;
@@ -560,7 +598,7 @@ static void check_variables(void)
       }
    }
    if (audio) delete audio;
-   audio = new Api::Sound::Output(audio_buffer, is_pal ? 44100 / 50 : 44100 / 60);
+   audio = new Api::Sound::Output(audio_buffer, is_pal ? 48000 / 50 : 48000 / 60);
 
    var.key = "nestopia_genie_distortion";
 
@@ -592,6 +630,16 @@ static void check_variables(void)
          video.EnableUnlimSprites(false);
       else if (strcmp(var.value, "enabled") == 0)
          video.EnableUnlimSprites(true);
+   }
+   
+   var.key = "nestopia_overclock";
+   
+   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var))
+   {
+      if (strcmp(var.value, "1x") == 0)
+         video.EnableOverclocking(false);
+      else if (strcmp(var.value, "2x") == 0)
+         video.EnableOverclocking(true);
    }
    
    var.key = "nestopia_fds_auto_insert";
@@ -691,13 +739,21 @@ static void check_variables(void)
          video.GetPalette().SetMode(Api::Video::Palette::MODE_CUSTOM);
          video.GetPalette().SetCustom(pal_palette, Api::Video::Palette::STD_PALETTE);
       }
-      else if (strcmp(var.value, "nostalgia") == 0) {
+      else if (strcmp(var.value, "composite-direct-fbx") == 0) {
          video.GetPalette().SetMode(Api::Video::Palette::MODE_CUSTOM);
-         video.GetPalette().SetCustom(nostalgia_palette, Api::Video::Palette::STD_PALETTE);
+         video.GetPalette().SetCustom(composite_direct_fbx_palette, Api::Video::Palette::STD_PALETTE);
       }
-      else if (strcmp(var.value, "nes-classic") == 0) {
+      else if (strcmp(var.value, "pvm-style-d93-fbx") == 0) {
          video.GetPalette().SetMode(Api::Video::Palette::MODE_CUSTOM);
-         video.GetPalette().SetCustom(nes_classic_palette, Api::Video::Palette::STD_PALETTE);
+         video.GetPalette().SetCustom(pvm_style_d93_fbx_palette, Api::Video::Palette::STD_PALETTE);
+      }
+      else if (strcmp(var.value, "ntsc-hardware-fbx") == 0) {
+         video.GetPalette().SetMode(Api::Video::Palette::MODE_CUSTOM);
+         video.GetPalette().SetCustom(ntsc_hardware_fbx_palette, Api::Video::Palette::STD_PALETTE);
+      }
+      else if (strcmp(var.value, "nes-classic-fbx-fs") == 0) {
+         video.GetPalette().SetMode(Api::Video::Palette::MODE_CUSTOM);
+         video.GetPalette().SetCustom(nes_classic_fbx_fs_palette, Api::Video::Palette::STD_PALETTE);
       }
       else if (strcmp(var.value, "raw") == 0) {
          /* outputs raw chroma/level/emphasis in the R/G/B channels
@@ -778,7 +834,7 @@ void retro_run(void)
    if (Api::Input(emulator).GetConnectedController(1) == 5)
       draw_crosshair(crossx, crossy);
    
-   unsigned frames = is_pal ? 44100 / 50 : 44100 / 60;
+   unsigned frames = is_pal ? 48000 / 50 : 48000 / 60;
    for (unsigned i = 0; i < frames; i++)
       audio_stereo_buffer[(i << 1) + 0] = audio_stereo_buffer[(i << 1) + 1] = audio_buffer[i];
    audio_batch_cb(audio_stereo_buffer, frames);
@@ -793,8 +849,10 @@ void retro_run(void)
    }
    
    // Absolute mess of inline if statements...
-   video_cb(video_buffer + (overscan_v ? ((overscan_h ? 8 : 0) + (blargg_ntsc ? Api::Video::Output::NTSC_WIDTH : Api::Video::Output::WIDTH) * 8) : (overscan_h ? 8 : 0) + 0),
-         video_width - (overscan_h ? 16 : 0),
+   int dif = blargg_ntsc ? 18 : 8;
+
+   video_cb(video_buffer + (overscan_v ? ((overscan_h ? dif : 0) + (blargg_ntsc ? Api::Video::Output::NTSC_WIDTH : Api::Video::Output::WIDTH) * 8) : (overscan_h ? dif : 0) + 0),
+         video_width - (overscan_h ? 2 * dif : 0),
          Api::Video::Output::HEIGHT - (overscan_v ? 16 : 0),
          pitch);
 }
@@ -860,6 +918,7 @@ bool retro_load_game(const struct retro_game_info *info)
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R,     "(FDS) Eject Disk" },
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2,    "(VSSystem) Coin 1" },
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2,    "(VSSystem) Coin 2" },
+      { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3,    "(Famicom) Microphone" },
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT,   "Select" },
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START,    "Start" },
 
@@ -905,6 +964,16 @@ bool retro_load_game(const struct retro_game_info *info)
       { 0 },
    };
 
+#ifdef _3DS
+   video_buffer = (uint32_t*)linearMemAlign(Api::Video::Output::NTSC_WIDTH * Api::Video::Output::HEIGHT * sizeof(uint32_t), 0x80);
+#else
+   video_buffer = (uint32_t*)malloc(Api::Video::Output::NTSC_WIDTH * Api::Video::Output::HEIGHT * sizeof(uint32_t));
+#endif
+
+   machine = new Api::Machine(emulator);
+   input = new Api::Input::Controllers;
+   Api::User::fileIoCallback.Set(file_io_callback, 0);
+
    environ_cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, desc);
 
    if (!environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &dir) || !dir)
@@ -919,12 +988,13 @@ bool retro_load_game(const struct retro_game_info *info)
    
    if (custompalette->is_open())
    {
-      custompalette->read((char*)custpal, 64*3);
+      custompalette->read((char*)custpal, sizeof(custpal));
       if (log_cb)
          log_cb(RETRO_LOG_WARN, "custom.pal loaded from system directory.\n");
    }
    else
    {
+      memcpy(custpal, cxa2025as_palette, sizeof(custpal));
       if (log_cb)
          log_cb(RETRO_LOG_WARN, "custom.pal not found in system directory.\n");
    }
@@ -1028,7 +1098,7 @@ bool retro_load_game(const struct retro_game_info *info)
 
    Api::Sound isound(emulator);
    isound.SetSampleBits(16);
-   isound.SetSampleRate(44100);
+   isound.SetSampleRate(48000);
    isound.SetSpeaker(Api::Sound::SPEAKER_MONO);
 
    if (dbpresent)
@@ -1037,6 +1107,7 @@ bool retro_load_game(const struct retro_game_info *info)
       Api::Input(emulator).AutoSelectController(1);
       Api::Input(emulator).AutoSelectController(2);
       Api::Input(emulator).AutoSelectController(3);
+      Api::Input(emulator).AutoSelectAdapter();
    }
    else
    {
@@ -1064,9 +1135,41 @@ bool retro_load_game(const struct retro_game_info *info)
 
 void retro_unload_game(void)
 {
-   machine->Unload();
+   if (machine)
+   {
+      machine->Unload();
+
+      if (machine->Is(Nes::Api::Machine::DISK))
+      {
+         if (fds)
+            delete fds;
+         fds = 0;
+      }
+
+      delete machine;
+   }
+
+   if (video)
+      delete video;
+   if (audio)
+      delete audio;
+   if (input)
+      delete input;
+
+   machine = 0;
+   video   = 0;
+   audio   = 0;
+   input   = 0;
+
    sram = 0;
    sram_size = 0;
+
+#ifdef _3DS
+   linearFree(video_buffer);
+#else
+   free(video_buffer);
+#endif
+   video_buffer = NULL;
 }
 
 unsigned retro_get_region(void)
@@ -1134,9 +1237,36 @@ void retro_cheat_set(unsigned index, bool enabled, const char *code)
 {
    Nes::Api::Cheats cheater(emulator);
    Nes::Api::Cheats::Code ggCode;
+   char codeCopy[256];
+   char *part;
 
-   if (Nes::Api::Cheats::GameGenieDecode(code, ggCode) == RESULT_OK)
-      cheater.SetCode(ggCode);
-   if (Nes::Api::Cheats::ProActionRockyDecode(code, ggCode) == RESULT_OK)
-      cheater.SetCode(ggCode);
+   if (code == NULL) return;
+   strcpy(codeCopy,code);
+   part = strtok(codeCopy,"+,;._ ");
+
+   while (part)
+   {
+      if ((strlen(part) == 7) && (part[4]==':'))
+      {
+         part[4]='\0';
+         ggCode.address=strtoul(part,NULL,16);
+         ggCode.value=strtoul(part+5,NULL,16);
+         cheater.SetCode(ggCode);
+      }
+      else if ((strlen(part)==10) && (part[4]=='?') && (part[7]==':'))
+      {
+         part[4]='\0';
+         part[7]='\0';
+         ggCode.address=strtoul(part,NULL,16);
+         ggCode.compare=strtoul(part+5,NULL,16);
+         ggCode.useCompare=true;
+         ggCode.value=strtoul(part+8,NULL,16);
+         cheater.SetCode(ggCode);
+      }
+      else if (Nes::Api::Cheats::GameGenieDecode(part, ggCode) == RESULT_OK)
+         cheater.SetCode(ggCode);
+      else if (Nes::Api::Cheats::ProActionRockyDecode(part, ggCode) == RESULT_OK)
+         cheater.SetCode(ggCode);
+      part = strtok(NULL,"+,;._ ");
+   }
 }

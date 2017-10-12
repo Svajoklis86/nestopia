@@ -1,7 +1,7 @@
 #ifndef _MAIN_H_
 #define _MAIN_H_
 
-#define VERSION "1.48-WIP"
+#define VERSION "1.49-WIP"
 
 typedef struct {
 	char nstdir[256];
@@ -16,7 +16,7 @@ typedef struct {
 
 bool nst_archive_checkext(const char *filename);
 bool nst_archive_handle(const char *filename, char **rom, int *romsize, const char *reqfile);
-bool nst_find_patch(char *filename);
+bool nst_find_patch(char *patchname, unsigned int patchname_length, const char *filename);
 void nst_load_db();
 void nst_load_fds_bios();
 void nst_load_palette(const char *filename);
@@ -45,5 +45,10 @@ void nst_flip_disk();
 void nst_switch_disk();
 
 void nst_dipswitch();
+
+void nst_emuloop();
+int nst_timing_runframes();
+void nst_timing_set_ffspeed();
+void nst_timing_set_default();
 
 #endif

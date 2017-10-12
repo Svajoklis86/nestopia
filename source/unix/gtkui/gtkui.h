@@ -3,14 +3,9 @@
 
 #include <gtk/gtk.h>
 
-#ifdef _MINGW
-#include <gdk/gdkwin32.h>
-#elif _APPLE
-#else
-#include <gdk/gdkx.h>
-#endif
-
 void gtkui_init(int argc, char *argv[]);
+void gtkui_emuloop_start();
+void gtkui_emuloop_stop();
 void gtkui_create();
 void gtkui_resize();
 void gtkui_set_title(const char *title);
@@ -19,5 +14,8 @@ void gtkui_image_paths();
 void gtkui_message(const char* message);
 void gtkui_cursor_set_crosshair();
 void gtkui_cursor_set_default();
+void gtkui_toggle_fullscreen();
+void gtkui_signals_init();
+void gtkui_signals_deinit();
 
 #endif

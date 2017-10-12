@@ -189,7 +189,6 @@ namespace Nes
 		Result Machine::SetRamPowerState(const uint state) throw()
 		{
 			emulator.SetRamPowerState(state);
-
 			return RESULT_OK;
 		}
 

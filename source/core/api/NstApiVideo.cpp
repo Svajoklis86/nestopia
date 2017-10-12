@@ -58,6 +58,20 @@ namespace Nes
 			return RESULT_NOP;
 		}
 
+		Result Video::EnableOverclocking(bool state) throw()
+		{
+			if (emulator.tracker.IsLocked( true ))
+				return RESULT_ERR_NOT_READY;
+
+			if (emulator.ppu.GetOverclockState() != state)
+			{
+				emulator.ppu.SetOverclockState( state );
+				return RESULT_OK;
+			}
+
+			return RESULT_NOP;
+		}
+
 		bool Video::AreUnlimSpritesEnabled() const throw()
 		{
 			return !emulator.ppu.HasSpriteLimit();
@@ -306,13 +320,13 @@ namespace Nes
 
 		Video::Palette::Mode Video::Palette::GetMode() const throw()
 		{
-			switch (emulator.renderer.GetPaletteType())
+			if (emulator.renderer.GetPaletteType() == Core::Video::Renderer::PALETTE_YUV)
 			{
-				case Core::Video::Renderer::PALETTE_YUV:
-					return MODE_YUV;
-
-				case Core::Video::Renderer::PALETTE_CUSTOM:
-					return MODE_CUSTOM;
+				return MODE_YUV;
+			}
+			else if (emulator.renderer.GetPaletteType() == Core::Video::Renderer::PALETTE_CUSTOM)
+			{
+				return MODE_CUSTOM;
 			}
 
 			return MODE_RGB;

@@ -2,7 +2,7 @@
  * Nestopia UE
  * 
  * Copyright (C) 2007-2008 R. Belmont
- * Copyright (C) 2012-2016 R. Danbrook
+ * Copyright (C) 2012-2017 R. Danbrook
  * 
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -40,10 +40,6 @@
 
 #ifdef _GTK
 #include "gtkui/gtkui.h"
-#ifndef _APPLE
-#define _EMBED
-#endif
-extern GtkWidget *drawingarea;
 #endif
 
 using namespace Nes::Api;
@@ -54,19 +50,17 @@ char textbuf[32];
 bool drawtime = false;
 char timebuf[6];
 
-int overscan_offset, overscan_height;
+static int overscan_offset, overscan_height;
 
 static uint32_t videobuf[VIDBUF_MAXSIZE]; // Maximum possible internal size
 
-SDL_Window *sdlwindow;
-SDL_Window *embedwindow;
-SDL_GLContext glcontext;
-SDL_DisplayMode displaymode;
+static SDL_Window *sdlwindow;
+static SDL_GLContext glcontext;
 
-Video::RenderState::Filter filter;
-Video::RenderState renderstate;
+static Video::RenderState::Filter filter;
+static Video::RenderState renderstate;
 
-dimensions_t basesize, rendersize;
+dimensions_t basesize, rendersize, screensize;
 
 extern void *custompalette;
 
@@ -167,7 +161,7 @@ void ogl_init() {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	
 	conf.video_fullscreen ? 
-	glViewport(displaymode.w / 2.0f - rendersize.w / 2.0f, 0, rendersize.w, rendersize.h) :
+	glViewport(screensize.w / 2.0f - rendersize.w / 2.0f, 0, rendersize.w, rendersize.h) :
 	glViewport(0, 0, rendersize.w, rendersize.h);
 	
 	glUniform1i(glGetUniformLocation(gl_shader_prog, "nestex"), 0);
@@ -199,7 +193,7 @@ void ogl_render() {
 	glClear(GL_COLOR_BUFFER_BIT);
 	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 	
-	video_swapbuffers();
+	if (sdlwindow) { video_swapbuffers(); }
 }
 
 void video_init() {
@@ -220,52 +214,27 @@ void video_toggle_fullscreen() {
 	// Toggle between fullscreen and window mode
 	if (!playing) { return; }
 	
-	Uint32 flags;
 	conf.video_fullscreen ^= 1;
 	
-	if (conf.video_fullscreen) {
-		flags = SDL_WINDOW_FULLSCREEN_DESKTOP;
-	}
-	else { flags = 0; }
-	
-	#ifdef _EMBED
-	if (conf.video_fullscreen) {
-		SDL_DestroyWindow(sdlwindow);
-		video_create_standalone();
-		SDL_GL_MakeCurrent(sdlwindow, glcontext);
-	}
-	else {
-		if (!conf.misc_disable_gui) {
-			SDL_GL_MakeCurrent(embedwindow, glcontext);
-			SDL_DestroyWindow(sdlwindow);
-			gtkui_resize();
+	if (conf.misc_disable_gui) {
+		Uint32 flags;
+		if (conf.video_fullscreen) {
+			flags = SDL_WINDOW_FULLSCREEN_DESKTOP;
 		}
-		else {
-			video_set_dimensions();
-			SDL_SetWindowFullscreen(sdlwindow, flags);
-			SDL_SetWindowSize(sdlwindow, rendersize.w, rendersize.h);
-		}
+		else { flags = 0; }
+		SDL_SetWindowFullscreen(sdlwindow, flags);
+		SDL_SetWindowSize(sdlwindow, rendersize.w, rendersize.h);
 	}
-	#else
-	SDL_SetWindowFullscreen(sdlwindow, flags);
-	SDL_SetWindowSize(sdlwindow, rendersize.w, rendersize.h);
+	#ifdef _GTK
+	else { gtkui_toggle_fullscreen(); }
 	#endif
-	
 	video_set_cursor();
 	video_init();
 }
 
 void video_toggle_filter() {
 	conf.video_filter++;
-	
-	// Intentionally leaving out scalex
-	if (conf.video_filter > 4) { conf.video_filter = 0; }
-	
-	// The scalex filter only allows 3x scale and crashes otherwise
-	if (conf.video_filter == 5 && conf.video_scale_factor == 4) {
-		conf.video_scale_factor = 3;
-	}
-	
+	if (conf.video_filter > 5) { conf.video_filter = 0; }
 	video_init();
 }
 
@@ -278,20 +247,12 @@ void video_toggle_filterupdate() {
 void video_toggle_scalefactor() {
 	// Toggle video scale factor
 	conf.video_scale_factor++;
-	if (conf.video_scale_factor > 4) { conf.video_scale_factor = 1; }
-	
-	// The scalex filter only allows 3x scale and crashes otherwise
-	if (conf.video_filter == 5 && conf.video_scale_factor == 4) {
-		conf.video_scale_factor = 1;
-	}
-	
+	if (conf.video_scale_factor > 8) { conf.video_scale_factor = 1; }
 	video_init();
 }
 
-void video_create_standalone() {
+void video_create_sdlwindow() {
 	// Create a standalone SDL window
-	int displayindex;
-	
 	Uint32 windowflags = SDL_WINDOW_SHOWN|SDL_WINDOW_OPENGL|SDL_WINDOW_RESIZABLE;
 	
 	if (conf.video_fullscreen) {
@@ -311,88 +272,32 @@ void video_create_standalone() {
 		fprintf(stderr, "Could not create window: %s\n", SDL_GetError());
 	}
 	
-	displayindex = SDL_GetWindowDisplayIndex(sdlwindow);
-	SDL_GetDesktopDisplayMode(displayindex, &displaymode);
-	//printf("w: %d\th: %d\n", displaymode.w, displaymode.h);
-	//printf("Window Flags: %x\n", SDL_GetWindowFlags(sdlwindow));
-	
 	SDL_GL_MakeCurrent(sdlwindow, glcontext);
 	SDL_GL_SetSwapInterval(conf.timing_vsync);
 }
 
-void video_create_embedded() {
-	// Create an embedded SDL window
-	#ifdef _EMBED
-	GdkDisplayManager *displaymanager = gdk_display_manager_get();
-	GdkDisplay *display = gdk_display_manager_get_default_display(displaymanager);
-	
-	#ifdef GDK_WINDOWING_X11
-	if (GDK_IS_X11_DISPLAY(display)) {
-		embedwindow = SDL_CreateWindowFrom((void*)GDK_WINDOW_XID(gtk_widget_get_window(drawingarea)));
-	}
-	#endif
-	
-	/*#ifdef GDK_WINDOWING_WAYLAND
-	if (GDK_IS_WAYLAND_DISPLAY(display)) {
-		printf("Wayland will be supported in the future. For now use the X11 backend.\n");
-		exit(0);
-	}
-	#endif*/
-	
-	#ifdef _MINGW
-	#ifdef GDK_WINDOWING_WIN32
-	if (GDK_IS_WIN32_DISPLAY(display)) {
-		embedwindow = SDL_CreateWindowFrom((void*)GDK_WINDOW_HWND(gtk_widget_get_window(drawingarea)));
-	}
-	#endif
-	#endif
-	
-	embedwindow->flags |= SDL_WINDOW_OPENGL;
-	SDL_GL_LoadLibrary(NULL);
-	if (nst_nsf) { video_disp_nsf(); }
-	#endif
-}
-
 void video_create() {
-	// Create the necessary window(s)
+	// Create the window
 	
-	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
-	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-	
-	#ifdef _EMBED
 	if (conf.misc_disable_gui) {
-		video_create_standalone();
+		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
+		SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+		
+		video_create_sdlwindow();
 		glcontext = SDL_GL_CreateContext(sdlwindow);
-	}
-	else {
-		video_create_embedded();
-		glcontext = SDL_GL_CreateContext(embedwindow);
-		if (conf.video_fullscreen) {
-			video_create_standalone();
-			glcontext = SDL_GL_CreateContext(sdlwindow);
+		
+		if(glcontext == NULL) {
+			fprintf(stderr, "Could not create glcontext: %s\n", SDL_GetError());
 		}
+		
+		fprintf(stderr, "OpenGL: %s\n", glGetString(GL_VERSION));
 	}
-	#else
-	video_create_standalone();
-	glcontext = SDL_GL_CreateContext(sdlwindow);
-	#endif
-	
-	if(glcontext == NULL) {
-		fprintf(stderr, "Could not create glcontext: %s\n", SDL_GetError());
-	}
-	
-	fprintf(stderr, "OpenGL: %s\n", glGetString(GL_VERSION));
 }
 
 void video_swapbuffers() {
 	// Swap Buffers
-	#ifdef _EMBED
-	if (conf.misc_disable_gui) { SDL_GL_SwapWindow(sdlwindow); }
-	else { conf.video_fullscreen ? SDL_GL_SwapWindow(sdlwindow) : SDL_GL_SwapWindow(embedwindow); }
-	#else
 	SDL_GL_SwapWindow(sdlwindow);
-	#endif
 }
 
 void video_destroy() {
@@ -404,6 +309,8 @@ void video_set_filter() {
 	// Set the filter
 	Video video(emulator);
 	int scalefactor = conf.video_scale_factor;
+	if (conf.video_scale_factor > 4) { scalefactor = 4; }
+	if ((conf.video_scale_factor > 3) && (conf.video_filter == 5)) { scalefactor = 3; }
 	
 	switch(conf.video_filter) {
 		case 0:	// None
@@ -419,15 +326,12 @@ void video_set_filter() {
 				case 2:
 					filter = Video::RenderState::FILTER_2XBR;
 					break;
-
 				case 3:
 					filter = Video::RenderState::FILTER_3XBR;
 					break;
-
 				case 4:
 					filter = Video::RenderState::FILTER_4XBR;
 					break;
-
 				default:
 					filter = Video::RenderState::FILTER_NONE;
 					break;
@@ -439,15 +343,12 @@ void video_set_filter() {
 				case 2:
 					filter = Video::RenderState::FILTER_HQ2X;
 					break;
-
 				case 3:
 					filter = Video::RenderState::FILTER_HQ3X;
 					break;
-
 				case 4:
 					filter = Video::RenderState::FILTER_HQ4X;
 					break;
-
 				default:
 					filter = Video::RenderState::FILTER_NONE;
 					break;
@@ -463,11 +364,9 @@ void video_set_filter() {
 				case 2:
 					filter = Video::RenderState::FILTER_SCALE2X;
 					break;
-
 				case 3:
 					filter = Video::RenderState::FILTER_SCALE3X;
 					break;
-
 				default:
 					filter = Video::RenderState::FILTER_NONE;
 					break;
@@ -603,24 +502,41 @@ void video_set_filter() {
 
 void video_set_dimensions() {
 	// Set up the video dimensions
+	
+	if (conf.misc_disable_gui) {
+		SDL_DisplayMode displaymode;
+		int displayindex = SDL_GetWindowDisplayIndex(sdlwindow);
+		SDL_GetDesktopDisplayMode(displayindex, &displaymode);
+		screensize.w = displaymode.w;
+		screensize.h = displaymode.h;
+	}
+	#ifdef _GTK
+	else {
+		// Do this later
+	}
+	#endif
+	
 	int scalefactor = conf.video_scale_factor;
+	if (conf.video_scale_factor > 4) { scalefactor = 4; }
+	if ((conf.video_scale_factor > 3) && (conf.video_filter == 5)) { scalefactor = 3; }
+	int wscalefactor = conf.video_scale_factor;
 	int tvwidth = nst_pal ? PAL_TV_WIDTH : TV_WIDTH;
 	
 	switch(conf.video_filter) {
 		case 0:	// None
 			basesize.w = Video::Output::WIDTH;
 			basesize.h = Video::Output::HEIGHT;
-			conf.video_tv_aspect == true ? rendersize.w = tvwidth * scalefactor : rendersize.w = basesize.w * scalefactor;
-			rendersize.h = basesize.h * scalefactor;
+			conf.video_tv_aspect == true ? rendersize.w = tvwidth * wscalefactor : rendersize.w = basesize.w * wscalefactor;
+			rendersize.h = basesize.h * wscalefactor;
 			overscan_offset = basesize.w * OVERSCAN_TOP;
 			overscan_height = basesize.h - OVERSCAN_TOP - OVERSCAN_BOTTOM;
 			break;
 
 		case 1: // NTSC
 			basesize.w = Video::Output::NTSC_WIDTH;
-			rendersize.w = (basesize.w / 2) * scalefactor;
+			rendersize.w = (basesize.w / 2) * wscalefactor;
 			basesize.h = Video::Output::HEIGHT;
-			rendersize.h = basesize.h * scalefactor;
+			rendersize.h = basesize.h * wscalefactor;
 			overscan_offset = basesize.w * OVERSCAN_TOP;
 			overscan_height = basesize.h - OVERSCAN_TOP - OVERSCAN_BOTTOM;
 			break;
@@ -628,15 +544,10 @@ void video_set_dimensions() {
 		case 2: // xBR
 		case 3: // HqX
 		case 5: // ScaleX
-			if (conf.video_filter == 5 && scalefactor == 4) {
-				fprintf(stderr, "error: ScaleX filter cannot scale to 4x\n");
-				conf.video_scale_factor = scalefactor = 3;
-			}
-			
 			basesize.w = Video::Output::WIDTH * scalefactor;
 			basesize.h = Video::Output::HEIGHT * scalefactor;
-			conf.video_tv_aspect == true ? rendersize.w = tvwidth * scalefactor : rendersize.w = basesize.w;
-			rendersize.h = basesize.h;
+			conf.video_tv_aspect == true ? rendersize.w = tvwidth * wscalefactor : rendersize.w = Video::Output::WIDTH * wscalefactor;;
+			rendersize.h = Video::Output::HEIGHT * wscalefactor;
 			overscan_offset = basesize.w * OVERSCAN_TOP * scalefactor;
 			overscan_height = basesize.h - (OVERSCAN_TOP + OVERSCAN_BOTTOM) * scalefactor;
 			break;
@@ -644,8 +555,8 @@ void video_set_dimensions() {
 		case 4: // 2xSaI
 			basesize.w = Video::Output::WIDTH * 2;
 			basesize.h = Video::Output::HEIGHT * 2;
-			conf.video_tv_aspect == true ? rendersize.w = tvwidth * scalefactor : rendersize.w = Video::Output::WIDTH * scalefactor;
-			rendersize.h = Video::Output::HEIGHT * scalefactor;
+			conf.video_tv_aspect == true ? rendersize.w = tvwidth * wscalefactor : rendersize.w = Video::Output::WIDTH * wscalefactor;
+			rendersize.h = Video::Output::HEIGHT * wscalefactor;
 			overscan_offset = basesize.w * OVERSCAN_TOP * 2;
 			overscan_height = basesize.h - (OVERSCAN_TOP + OVERSCAN_BOTTOM) * 2;
 			break;
@@ -657,24 +568,21 @@ void video_set_dimensions() {
 	else { overscan_offset = 0; overscan_height = basesize.h; }
 	
 	// Calculate the aspect from the height because it's smaller
-	float aspect = (float)displaymode.h / (float)rendersize.h;
+	float aspect = (float)screensize.h / (float)rendersize.h;
 	
-	if (!conf.video_stretch_aspect && conf.video_fullscreen && sdlwindow) {
+	if (!conf.video_stretch_aspect && conf.video_fullscreen) {
 		rendersize.h *= aspect;
 		rendersize.w *= aspect;
 	}
-	else if (conf.video_fullscreen && sdlwindow) {
-		rendersize.h = displaymode.h;
-		rendersize.w = displaymode.w;
+	else if (conf.video_fullscreen) {
+		rendersize.h = screensize.h;
+		rendersize.w = screensize.w;
 	}
 	
-	#ifdef _EMBED
-	if (!conf.misc_disable_gui) {
-		SDL_SetWindowSize(embedwindow, rendersize.w, rendersize.h);
-		gtkui_resize();
-	}
+	if (conf.misc_disable_gui) { SDL_SetWindowSize(sdlwindow, rendersize.w, rendersize.h); }
+	#ifdef _GTK
+	else { gtkui_resize(); }
 	#endif
-	SDL_SetWindowSize(sdlwindow, rendersize.w, rendersize.h);
 }
 
 void video_set_cursor() {
@@ -726,8 +634,6 @@ void video_unlock_screen(void*) {
 	if (drawtime) {
 		video_text_draw(timebuf, 208 * wscale, 218 * hscale);
 	}
-	
-	ogl_render();
 }
 
 void video_screenshot_flip(unsigned char *pixels, int width, int height, int bytes) {

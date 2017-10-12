@@ -432,6 +432,11 @@ namespace Nes
 								nmt.Source(1).SwapBank<SIZE_4K,0x0000>(0);
 							}
 							break;
+
+						case Type::NMT_CONTROLLED:
+
+							default:
+							break;
 					}
 				}
 
@@ -1192,16 +1197,13 @@ namespace Nes
 
 						if (wram)
 						{
-							switch (id)
-							{
-								case Type::KONAMI_VRC4_0:  id = (wram > SIZE_2K ? Type::KONAMI_VRC4_2 : Type::KONAMI_VRC4_1); break;
-								case Type::KONAMI_VRC6_0:  id = Type::KONAMI_VRC6_1; break;
-								case Type::KONAMI_VRC7_0:  id = Type::KONAMI_VRC7_1; break;
-								case Type::IREM_G101A_0:   id = Type::IREM_G101A_1; break;
-								case Type::IREM_G101B_0:   id = Type::IREM_G101B_1; break;
-								case Type::SUNSOFT_FME7_0: id = Type::SUNSOFT_FME7_1; break;
-								case Type::SUNSOFT_5B_0:   id = Type::SUNSOFT_5B_1; break;
-							}
+							if (id == Type::KONAMI_VRC4_0)       { id = (wram > SIZE_2K ? Type::KONAMI_VRC4_2 : Type::KONAMI_VRC4_1); }
+							else if (id == Type::KONAMI_VRC6_0)  { id = Type::KONAMI_VRC6_1; }
+							else if (id == Type::KONAMI_VRC7_0)  { id = Type::KONAMI_VRC7_1; }
+							else if (id == Type::IREM_G101A_0)   { id = Type::IREM_G101A_1; }
+							else if (id == Type::IREM_G101B_0)   { id = Type::IREM_G101B_1; }
+							else if (id == Type::SUNSOFT_FME7_0) { id = Type::SUNSOFT_FME7_1; }
+							else if (id == Type::SUNSOFT_5B_0)   { id = Type::SUNSOFT_5B_1; }
 						}
 						break;
 				}
@@ -1770,9 +1772,20 @@ namespace Nes
 						break;
 
 					case 21:
+						
+						if (submapper == 1)
+						{
+							Chips::Type& chip = chips.Add(L"Konami VRC IV");
+
+							chip.Pin(3) = L"PRG A2";
+							chip.Pin(4) = L"PRG A1";
+
+							name = "KONAMI VRC4";
+							id = Type::KONAMI_VRC4_0;
+						}
 					case 25:
 
-						if (submapper == 15)
+						if (submapper == 2)
 						{ // The correct board is VRC2 but the functionality is implemented in the VRC4 code currently
 							Chips::Type& chip = chips.Add(L"Konami VRC IV");
 							chip.Pin(3)  = L"PRG A0";
@@ -1814,7 +1827,7 @@ namespace Nes
 
 					case 23:
 
-						if (submapper == 10)
+						if (submapper == 2)
 						{
 							Chips::Type& chip = chips.Add(L"Konami VRC IV");
 
@@ -1824,7 +1837,7 @@ namespace Nes
 							name = "KONAMI VRC4";
 							id = Type::KONAMI_VRC4_0;
 						}
-						else if (submapper == 15)
+						else if (submapper == 3)
 						{
 							name = "KONAMI VRC2";
 							id = Type::KONAMI_VRC2;
@@ -3678,6 +3691,7 @@ namespace Nes
 					case Type::WAIXING_SECURITY_0         :
 					case Type::WAIXING_SECURITY_1         : return new Waixing::Security(c);
 					case Type::WHIRLWIND_2706             : return new Whirlwind::W2706(c);
+					case Type::UNKNOWN                    : default: break;
 				}
 
 				return NULL;

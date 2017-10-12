@@ -108,6 +108,7 @@ namespace Nes
 		yuvMap (NULL)
 		{
 			cycles.one = PPU_RP2C02_CC;
+			overclocked = false;
 			PowerOff();
 		}
 
@@ -137,37 +138,28 @@ namespace Nes
 					cpu.Map( i+7 ).Set( this,               &Ppu::Peek_2007,                   &Ppu::Poke_2007 );
 				}
 
-				switch (model)
+				if (model == PPU_RC2C05_01 || model == PPU_RC2C05_04)
 				{
-					case PPU_RC2C05_01:
-					case PPU_RC2C05_02:
-					case PPU_RC2C05_03:
-					case PPU_RC2C05_04:
-
-						if (model == PPU_RC2C05_02)
-						{
-							for (uint i=0x2002; i < 0x4000; i += 0x8)
-								cpu.Map( i ).Set( &Ppu::Peek_2002_RC2C05_02 );
-						}
-						else if (model == PPU_RC2C05_03)
-						{
-							for (uint i=0x2002; i < 0x4000; i += 0x8)
-								cpu.Map( i ).Set( &Ppu::Peek_2002_RC2C05_03 );
-						}
-						else
-						{
-							for (uint i=0x2002; i < 0x4000; i += 0x8)
-								cpu.Map( i ).Set( &Ppu::Peek_2002_RC2C05_01_04 );
-						}
-
-					case PPU_RC2C05_05:
-
-						for (uint i=0x2000; i < 0x4000; i += 0x8)
-						{
-							cpu.Map( i+0 ).Set( &Ppu::Poke_2001 );
-							cpu.Map( i+1 ).Set( &Ppu::Poke_2000 );
-						}
-						break;
+					for (uint i=0x2002; i < 0x4000; i += 0x8)
+						cpu.Map( i ).Set( &Ppu::Peek_2002_RC2C05_01_04 );
+				}
+				else if (model == PPU_RC2C05_02)
+				{
+					for (uint i=0x2002; i < 0x4000; i += 0x8)
+						cpu.Map( i ).Set( &Ppu::Peek_2002_RC2C05_02 );
+				}
+				else if (model == PPU_RC2C05_03)
+				{
+					for (uint i=0x2002; i < 0x4000; i += 0x8)
+						cpu.Map( i ).Set( &Ppu::Peek_2002_RC2C05_03 );
+				}
+				else if (model == PPU_RC2C05_05)
+				{
+					for (uint i=0x2000; i < 0x4000; i += 0x8)
+					{
+						cpu.Map( i+0 ).Set( &Ppu::Poke_2001 );
+						cpu.Map( i+1 ).Set( &Ppu::Poke_2000 );
+					}
 				}
 
 				cpu.Map( 0x4014U ).Set( this, &Ppu::Peek_4014, &Ppu::Poke_4014 );
@@ -312,7 +304,7 @@ namespace Nes
 		void Ppu::UpdatePalette()
 		{
 			for (uint i=0, c=Coloring(), e=Emphasis(); i < Palette::SIZE; ++i)
-				output.palette[i] = (rgbMap ? rgbMap[palette.ram[i] & uint(Palette::COLOR)] : palette.ram[i]) & c | e;
+				output.palette[i] = ((rgbMap ? rgbMap[palette.ram[i] & uint(Palette::COLOR)] : palette.ram[i]) & c) | e;
 		}
 
 		void Ppu::SaveState(State::Saver& state,const dword baseChunk) const
@@ -564,6 +556,38 @@ namespace Nes
 					break;
 			}
 
+			if (overclocked)
+			{
+				Apu& audioSafeOverclock = cpu.GetApu();
+				if (audioSafeOverclock.GetOverclockSafety())
+				{
+					switch (model)
+					{
+						case PPU_RP2C02:
+						default:
+
+						cpu.SetOverclocking(true,PPU_RP2C02_HSYNC * PPU_RP2C02_VACTIVE);
+						break;
+
+						case PPU_RP2C07:
+
+						cpu.SetOverclocking(true,PPU_RP2C07_HSYNC * PPU_RP2C07_VACTIVE);
+						break;
+
+						case PPU_DENDY:
+
+						cpu.SetOverclocking(true,PPU_DENDY_HSYNC * PPU_DENDY_VACTIVE);
+						break;
+					}
+				}
+				else
+				{
+					cpu.SetOverclocking(false,0);
+				}
+
+				audioSafeOverclock.SetOverclockSafety(true);//overclocking is only safe if direct pcm audio has not been written for one frame
+			}
+
 			cpu.SetFrameCycles( frame );
 		}
 
@@ -810,12 +834,12 @@ namespace Nes
 					if (!map)
 					{
 						for (uint i=0; i < Palette::SIZE; ++i)
-							output.palette[i] = palette.ram[i] & ce[0] | ce[1];
+							output.palette[i] = (palette.ram[i] & ce[0]) | ce[1];
 					}
 					else
 					{
 						for (uint i=0; i < Palette::SIZE; ++i)
-							output.palette[i] = map[palette.ram[i] & Palette::COLOR] & ce[0] | ce[1];
+							output.palette[i] = (map[palette.ram[i] & Palette::COLOR] & ce[0]) | ce[1];
 					}
 				}
 			}
@@ -836,17 +860,17 @@ namespace Nes
 
 		NES_PEEK_A(Ppu,2002_RC2C05_01_04)
 		{
-			return NES_DO_PEEK(2002,address) & 0xC0 | 0x1B;
+			return (NES_DO_PEEK(2002,address) & 0xC0) | 0x1B;
 		}
 
 		NES_PEEK_A(Ppu,2002_RC2C05_02)
 		{
-			return NES_DO_PEEK(2002,address) & 0xC0 | 0x3D;
+			return (NES_DO_PEEK(2002,address) & 0xC0) | 0x3D;
 		}
 
 		NES_PEEK_A(Ppu,2002_RC2C05_03)
 		{
-			return NES_DO_PEEK(2002,address) & 0xC0 | 0x1C;
+			return (NES_DO_PEEK(2002,address) & 0xC0) | 0x1C;
 		}
 
 		NES_POKE_D(Ppu,2003)
@@ -967,7 +991,7 @@ namespace Nes
 			{
 				address &= 0x1F;
 
-				const uint final = (!rgbMap ? data : rgbMap[data & Palette::COLOR]) & Coloring() | Emphasis();
+				const uint final = ((!rgbMap ? data : rgbMap[data & Palette::COLOR]) & Coloring()) | Emphasis();
 
 				palette.ram[address] = data;
 				output.palette[address] = final;
@@ -1311,7 +1335,7 @@ namespace Nes
 				address = (regs.ctrl[0] & Regs::CTRL0_SP_OFFSET) << 9 | buffer[1] << 4;
 			}
 
-			return address | comparitor & Oam::XFINE;
+			return address | (comparitor & Oam::XFINE);
 		}
 
 		NST_FORCE_INLINE void Ppu::LoadSprite(const uint pattern0,const uint pattern1,const byte* const NST_RESTRICT buffer)
